@@ -334,7 +334,7 @@
         // -------------------------------------------------------------------
         // !!! IMPORTANT !!! Replace the three placeholder strings below with your keys
         // -------------------------------------------------------------------
-        const GITHUB_TOKEN = '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'; 
+        const GITHUB_TOKEN = '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'; 
         const GIST_ID_LIST = 'aa4eb132f23a910620aa72f251755561';       // <-- FIRST Gist ID (for the main list)
         const GIST_ID_REQUESTS = 'aa6b7a9e52eef31ad5a3c226daf3f2a5';    // <-- SECOND Gist ID (for the requests)
         
@@ -351,8 +351,10 @@
         const syncStatusRequestsElement = document.getElementById('syncStatusRequests');
 
         function checkConfig() {
-            if (GITHUB_TOKEN.startsWith('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') || GIST_ID_LIST.startsWith('aa4eb132f23a910620aa72f251755561') || GIST_ID_REQUESTS.startsWith('aa6b7a9e52eef31ad5a3c226daf3f2a5')) {
-                const errorMsg = '🛑 ERROR: Sync not configured. Please set GITHUB_TOKEN, GIST_ID_LIST, and GIST_ID_REQUESTS in the script.';
+            // Check for the GitHub placeholders now
+            if (GITHUB_TOKEN.startsWith('YOUR_GITHUB') || GIST_ID_LIST.startsWith('YOUR_WATCHLIST') || GIST_ID_REQUESTS.startsWith('YOUR_REQUESTS')) {
+                // If it fails this check, it displays a new GitHub-specific error
+                const errorMsg = '🛑 ERROR: Sync not configured (GitHub). Please set GITHUB_TOKEN, GIST_ID_LIST, and GIST_ID_REQUESTS in the script.';
                 syncStatusListElement.textContent = errorMsg;
                 syncStatusRequestsElement.textContent = errorMsg;
                 return false;
@@ -423,7 +425,7 @@
 
             } catch (error) {
                 console.error('GitHub Sync Failed:', error);
-                statusElement.textContent = `❌ Sync Failed. Loading local backup.`;
+                statusElement.textContent = `❌ Sync Failed. Loading local backup. Check console for details.`;
                 return data === null ? getLocalBackup(fileName) : false;
             }
         }
