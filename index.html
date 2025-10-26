@@ -7,13 +7,13 @@
     <style>
         /* CSS Variables for Dark Dashboard Theme */
         :root {
-            --primary-color: #A064FF; /* Bright Violet/Purple Accent */
-            --secondary-color: #FFC107; /* Suggest Item Yellow Accent */
-            --background-dark: #1E2335; /* Main Background Color */
-            --card-dark: #2A314A; /* Card Background Color */
-            --text-light: #E0E6F7; /* Light Text */
-            --text-dim: #9FA8DA; /* Dim/Placeholder Text */
-            --border-dark: #3A4463; /* Card/Input Border */
+            --primary-color: #A064FF;
+            --secondary-color: #FFC107;
+            --background-dark: #1E2335;
+            --card-dark: #2A314A;
+            --text-light: #E0E6F7;
+            --text-dim: #9FA8DA;
+            --border-dark: #3A4463;
             --header-gradient: linear-gradient(90deg, #A064FF, #D093FF);
         }
 
@@ -75,6 +75,15 @@
         #playerView .button-back:hover {
              background-color: #3A4463;
         }
+        .button-load-more {
+            width: 100%;
+            background-color: var(--border-dark);
+            color: var(--text-light);
+            margin-top: 15px;
+        }
+        .button-load-more:hover {
+            background-color: #3A4463;
+        }
 
         /* View Structure */
         .view { display: none; } 
@@ -115,25 +124,23 @@
             border-radius: 6px; 
             border-left: 4px solid var(--primary-color); 
             display: flex;
-            align-items: center; /* Vertically align items */
-            gap: 15px; /* Space between image and text */
+            align-items: center;
+            gap: 15px;
         }
         /* Thumbnail Image Styling */
         .anime-item .thumbnail {
-            width: 80px; /* Fixed width for thumbnails */
-            height: 100px; /* Fixed height for thumbnails */
-            object-fit: cover; /* Crop image to fit */
+            width: 80px; 
+            height: 100px; 
+            object-fit: cover; 
             border-radius: 4px;
-            flex-shrink: 0; /* Prevent image from shrinking */
+            flex-shrink: 0;
         }
         .anime-item .content-wrapper {
-            flex-grow: 1; /* Allows content to take available space */
+            flex-grow: 1;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-
-        /* Make links look clickable, but keep them in-theme */
         .anime-item a { 
             text-decoration: none; 
             font-weight: 500; 
@@ -160,13 +167,12 @@
             margin-bottom: 10px;
         }
         #addLinkForm .input-group { 
-            display: grid; /* Use grid for internal input layout */
-            grid-template-columns: 1fr 1fr; /* Two columns for title/link */
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 10px;
         }
-        /* Make image URL input full width below title/link */
         #addLinkForm .input-group.full-width {
-            grid-column: 1 / -1; /* Span across both columns */
+            grid-column: 1 / -1;
         }
 
         input[type="text"], input[type="url"] { 
@@ -180,7 +186,7 @@
             color: var(--text-light);
         }
         
-        /* Request Table Styles (same as before) */
+        /* Request Table Styles */
         table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.85em; }
         th, td { padding: 10px; border: 1px solid var(--border-dark); text-align: left; vertical-align: middle; }
         thead { background-color: var(--primary-color); color: white; font-weight: 600; }
@@ -194,19 +200,10 @@
         .status-tag.On-Hold { background-color: #FFD54F; color: #333; }
         .status-tag.Completed { background-color: var(--primary-color); color: white; } 
 
-        /* Action Buttons (same as before) */
-        .action-group { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-start; }
-        .action-group button { padding: 4px 6px; font-size: 0.75em; border-radius: 3px; background-color: var(--border-dark); color: var(--text-light); }
-        .action-group button:hover { background-color: var(--primary-color); }
-        .btn-check { background-color: #5CB85C; } 
-        .btn-hold { background-color: #F0AD4E; }  
-        .btn-complete { background-color: #4527A0; }
-        .btn-delete { background-color: #D9534F; }
-
         /* Video Player Specific Styles */
         #videoPlayerFrame {
             width: 100%;
-            height: 600px; 
+            height: 600px;
             border: 4px solid var(--primary-color);
             border-radius: 8px;
             background-color: #000;
@@ -258,6 +255,7 @@
                     </div>
                     <div id="animeListContainer">
                         </div>
+                    <button class="button button-load-more" id="loadMoreBtn" onclick="loadMoreAnime()">Load More...</button>
                 </div>
 
             </div>
@@ -308,6 +306,10 @@
     </section>
 
     <script>
+        // --- CONSTANTS AND STATE ---
+        const ITEMS_PER_LOAD = 10;
+        let visibleItemCount = 0;
+
         // === VIEW MANAGEMENT ===
         const allViews = document.querySelectorAll('.view');
 
@@ -321,7 +323,11 @@
                 document.getElementById('videoPlayerFrame').src = ''; 
                 document.getElementById('addLinkForm').reset(); 
                 document.getElementById('requestAnimeForm').reset(); 
-                displayAnimeList();
+                
+                // When returning to dashboard, reset and display the first page of the list
+                visibleItemCount = 0; 
+                document.getElementById('animeListContainer').innerHTML = '';
+                displayAnimeList(); 
                 displayRequests();
             }
         }
@@ -339,6 +345,7 @@
 
         // === DATA HANDLERS (Anime List - Personal Links) ===
         function getAnimeList() {
+            // Returns the entire list from local storage
             return JSON.parse(localStorage.getItem('myAnimeList')) || [];
         }
 
@@ -350,55 +357,94 @@
              event.preventDefault();
              const title = document.getElementById('linkTitle').value;
              const link = document.getElementById('linkUrl').value;
-             const imageUrl = document.getElementById('imageUrl').value; // Get the image URL
+             const imageUrl = document.getElementById('imageUrl').value;
              
              const animeList = getAnimeList();
-             // Store the image URL along with title and link
-             animeList.push({ title, link, imageUrl }); 
+             // Add the new item to the *beginning* of the list (most recent first)
+             animeList.unshift({ title, link, imageUrl }); 
              saveAnimeList(animeList);
              
              document.getElementById('addLinkForm').reset();
+             
+             // Reset list view and show the new item
+             visibleItemCount = 0; 
+             document.getElementById('animeListContainer').innerHTML = '';
              displayAnimeList(); 
         }
 
         function deleteAnime(index) {
             if (confirm('Are you sure you want to delete this item from your personal list?')) {
                 let animeList = getAnimeList();
+                
+                // Delete logic must be based on the original full index, not the visible index.
+                // Since displayAnimeList loads from the start, we can rely on the index in the saved list.
                 animeList.splice(index, 1);
                 saveAnimeList(animeList);
-                displayAnimeList();
+                
+                // Re-render the visible items, starting from the beginning
+                visibleItemCount = 0; 
+                document.getElementById('animeListContainer').innerHTML = '';
+                displayAnimeList(); 
             }
         }
         
         function clearPersonalList() {
             if (confirm('WARNING: Are you sure you want to clear ALL items from your personal watch list? This cannot be undone.')) {
                 saveAnimeList([]);
+                visibleItemCount = 0;
+                document.getElementById('animeListContainer').innerHTML = '';
                 displayAnimeList();
             }
         }
         window.clearPersonalList = clearPersonalList;
 
-        function displayAnimeList() {
+        // NEW FUNCTION: Logic for loading the next batch of items
+        function loadMoreAnime() {
+            displayAnimeList(true); // Call display function to append data
+        }
+        window.loadMoreAnime = loadMoreAnime;
+
+        function displayAnimeList(append = false) {
             const container = document.getElementById('animeListContainer');
             const animeList = getAnimeList();
-            container.innerHTML = ''; 
+            const totalItems = animeList.length;
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            
+            // Update header count only if we are starting a fresh display (not just appending)
+            if (!append) {
+                 visibleItemCount = 0;
+            }
 
-            document.getElementById('listHeader').textContent = `My Current Watch List (${animeList.length} Titles)`;
+            // Calculate the next batch of items to show
+            const nextBatchStart = visibleItemCount;
+            const nextBatchEnd = Math.min(nextBatchStart + ITEMS_PER_LOAD, totalItems);
+            
+            if (nextBatchStart === 0 && !append) {
+                container.innerHTML = '';
+            }
+            
+            // Slice the list to get only the new items for the current page/load
+            const itemsToDisplay = animeList.slice(nextBatchStart, nextBatchEnd);
+            
+            document.getElementById('listHeader').textContent = `My Current Watch List (${totalItems} Titles)`;
 
-            if (animeList.length === 0) {
+            if (totalItems === 0) {
                 container.innerHTML = '<p style="text-align: center; color: var(--text-dim); padding: 10px;">Your list is empty. Add a new item above!</p>';
+                loadMoreBtn.style.display = 'none';
                 return;
             }
 
-            animeList.forEach((anime, index) => {
+            itemsToDisplay.forEach((anime, indexOffset) => {
+                // The actual index in the full list is 'nextBatchStart + indexOffset'
+                const actualIndex = nextBatchStart + indexOffset;
+                
                 const animeDiv = document.createElement('div');
                 animeDiv.className = 'anime-item';
                 
-                // Determine image source - use provided URL or a placeholder
                 const imageSrc = anime.imageUrl && anime.imageUrl.startsWith('http') ? anime.imageUrl : 'https://via.placeholder.com/80x100?text=No+Image';
 
-                // Uses loadVideoPlayer for the link click
                 const linkContent = anime.link ? 
+                    // Pass the actual index for deletion to work correctly on the full list
                     `<a onclick="loadVideoPlayer('${anime.title.replace(/'/g, "\\'")}', '${anime.link.replace(/'/g, "\\'")}')" title="Play Link">${anime.title}</a>` :
                     `<span>${anime.title} (No Link)</span>`;
 
@@ -406,14 +452,26 @@
                     <img src="${imageSrc}" alt="${anime.title} Thumbnail" class="thumbnail">
                     <div class="content-wrapper">
                         ${linkContent}
-                        <button class="button button-danger delete-btn" style="padding: 5px 10px; font-size: 0.8em;" onclick="deleteAnime(${index})">Delete</button>
+                        <button class="button button-danger delete-btn" style="padding: 5px 10px; font-size: 0.8em;" onclick="deleteAnime(${actualIndex})">Delete</button>
                     </div>
                 `;
                 container.appendChild(animeDiv);
             });
+            
+            // Update the count of visible items
+            visibleItemCount = nextBatchEnd; 
+
+            // Handle the Load More button visibility
+            if (visibleItemCount < totalItems) {
+                loadMoreBtn.style.display = 'block';
+                loadMoreBtn.textContent = `Load More (${totalItems - visibleItemCount} remaining)`;
+            } else {
+                loadMoreBtn.style.display = 'none';
+            }
         }
 
         // === DATA HANDLERS (Anime Requests - Public Requests) ===
+        // NOTE: Request list remains simple as it's assumed to be much shorter
         function getAnimeRequests() {
             return JSON.parse(localStorage.getItem('animeRequests')) || [];
         }
@@ -428,7 +486,7 @@
             const title = document.getElementById('requestedTitle').value;
 
             const requests = getAnimeRequests();
-            requests.push({ name, title, status: 'New' }); 
+            requests.unshift({ name, title, status: 'New' }); // New requests at the top
             saveAnimeRequests(requests);
 
             document.getElementById('requestAnimeForm').reset();
