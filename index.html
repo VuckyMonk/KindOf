@@ -95,7 +95,8 @@
             </div>
 
             <!-- 1. List View (Default) -->
-            <div id="listView" class="hidden">
+            <!-- CRITICAL FIX: Removed 'hidden' class so the structure is visible immediately -->
+            <div id="listView"> 
                 <!-- Input Form (Personal List) -->
                 <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl mb-8 border border-gray-700">
                     <h2 class="text-xl font-semibold mb-4">Add New Item (Personal)</h2>
@@ -286,7 +287,13 @@
                 userIdDisplay.textContent = `User ID: ${uid}`;
                 copyUidBtn.disabled = false;
                 copyUidBtn.onclick = () => {
-                    document.execCommand('copy', false, uid);
+                    // document.execCommand('copy') is the reliable way in this environment
+                    const tempInput = document.createElement('input');
+                    document.body.appendChild(tempInput);
+                    tempInput.value = uid;
+                    tempInput.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tempInput);
                     displayMessage("User ID copied!", false);
                 };
             } else {
@@ -297,7 +304,7 @@
             }
         }
 
-        // --- Authentication Ready Handler (New) ---
+        // --- Authentication Ready Handler ---
         function updateInteractiveElements(isEnabled) {
             // Personal List Inputs and Buttons
             itemInput.disabled = !isEnabled;
@@ -310,7 +317,7 @@
             suggesterInput.disabled = !isEnabled;
             addRequestBtn.disabled = !isEnabled;
             
-            // Add/Remove visual cues (optional, but good for UX)
+            // Add/Remove visual cues
             const items = [addItemBtn, addRequestBtn, itemInput, urlInput, requestInput, suggesterInput, clearAllBtn];
             items.forEach(el => {
                 el.classList.toggle('hover:bg-accent-hover', isEnabled && el.id === 'addItemBtn');
@@ -325,6 +332,7 @@
             currentView = viewName;
 
             // Toggle views visibility
+            // listView is visible by default now (no 'hidden' class on load)
             listView.classList.toggle('hidden', currentView !== 'list');
             videoLinksView.classList.toggle('hidden', currentView !== 'links');
             videoPlayerView.classList.toggle('hidden', currentView !== 'player');
@@ -787,10 +795,16 @@
         // --- Firebase Initialization and Auth ---
 
         async function initFirebase() {
+            // CRITICAL: Log global variables to debug environment issues
+            console.log("--- Firebase Init Check ---");
+            console.log("App ID:", appId);
+            console.log("Config loaded:", !!firebaseConfig);
+            console.log("Auth Token present:", !!initialAuthToken);
+            console.log("---------------------------");
+
             if (!firebaseConfig) {
                 updateUserIdDisplay('ERROR: Config missing', false);
-                loadingIndicator.classList.add('hidden');
-                listView.classList.remove('hidden');
+                loadingIndicator.classList.add('hidden'); // Hide spinner on config error
                 return;
             }
 
@@ -799,9 +813,9 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                loadingIndicator.classList.remove('hidden');
                 updateInteractiveElements(false); // Disable all UI elements immediately
                 updateUserIdDisplay(null, false); // Set status to loading
+                loadingIndicator.classList.remove('hidden'); // Show spinner
 
                 // --- 1. Attempt Primary Sign-in ---
                 if (initialAuthToken) {
@@ -822,6 +836,8 @@
 
                 // --- 2. Set up Auth State Listener (This runs after sign-in attempts finish) ---
                 onAuthStateChanged(auth, (user) => {
+                    loadingIndicator.classList.add('hidden'); // CRITICAL: Hide loading spinner here
+                    
                     if (user) {
                         currentUserId = user.uid;
                         isAuthReady = true;
@@ -831,22 +847,21 @@
                         
                         updateUserIdDisplay(currentUserId, true);
                         updateInteractiveElements(true); 
-                        loadingIndicator.classList.add('hidden');
-                        switchView(currentView);
-
+                        
+                        // Since listView is no longer hidden by default, we just ensure the correct view is showing
+                        switchView(currentView); 
                         setupRealtimeListeners();
                     } else {
                         // This state means auth failed entirely or user signed out
                         console.error("[AUTH FAILED] User is null. All sign-in attempts failed or user signed out.");
                         updateUserIdDisplay(`ERROR: Auth Failed`, false);
                         updateInteractiveElements(false);
-                        loadingIndicator.classList.add('hidden');
                         displayMessage("CRITICAL: Failed to sign in and enable UI.", true);
                     }
                 });
 
             } catch (error) {
-                console.error("Firebase Initialization Error:", error);
+                console.error("Firebase Initialization Error (App or Firestore):", error);
                 updateUserIdDisplay(`ERROR: Failed`, false);
                 loadingIndicator.classList.add('hidden');
                 updateInteractiveElements(false); 
