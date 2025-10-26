@@ -264,17 +264,19 @@
 
         // --- Authentication Ready Handler (New) ---
         function updateInteractiveElements(isEnabled) {
-            // Personal List Inputs
+            // Personal List Inputs and Buttons
             itemInput.disabled = !isEnabled;
             urlInput.disabled = !isEnabled;
             addItemBtn.disabled = !isEnabled;
+            // CRITICAL FIX: Ensure clearAllBtn is explicitly disabled/enabled
+            clearAllBtn.disabled = !isEnabled; 
             
-            // Public Request Inputs
+            // Public Request Inputs and Buttons
             requestInput.disabled = !isEnabled;
             suggesterInput.disabled = !isEnabled;
             addRequestBtn.disabled = !isEnabled;
             
-            // Add/Remove visual cues
+            // Add/Remove visual cues (optional, but good for UX)
             const items = [addItemBtn, addRequestBtn, itemInput, urlInput, requestInput, suggesterInput, clearAllBtn];
             items.forEach(el => {
                 el.classList.toggle('hover:bg-accent-hover', isEnabled && el.id === 'addItemBtn');
@@ -297,25 +299,25 @@
             document.querySelector('nav').classList.toggle('hidden', currentView === 'player');
             
             // Update button styles
-            const listClasses = ['bg-accent', 'active-view', 'text-white'];
-            const linkClasses = ['text-gray-400', 'hover:bg-gray-700', 'bg-accent', 'active-view', 'text-white'];
+            const activeClasses = ['bg-accent', 'active-view', 'text-white'];
+            const inactiveClasses = ['text-gray-400', 'hover:bg-gray-700'];
 
-            listViewBtn.classList.remove(...listClasses, ...linkClasses);
-            linksViewBtn.classList.remove(...listClasses, ...linkClasses);
-            
-            listViewBtn.classList.add('text-gray-400', 'hover:bg-gray-700');
-            linksViewBtn.classList.add('text-gray-400', 'hover:bg-gray-700');
+            // Reset both buttons
+            listViewBtn.classList.remove(...activeClasses);
+            listViewBtn.classList.add(...inactiveClasses);
+            linksViewBtn.classList.remove(...activeClasses);
+            linksViewBtn.classList.add(...inactiveClasses);
 
+            // Apply active styles
             if (currentView === 'list') {
-                listViewBtn.classList.add('bg-accent', 'active-view', 'text-white');
-                listViewBtn.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                listViewBtn.classList.add(...activeClasses);
+                listViewBtn.classList.remove(...inactiveClasses);
             } else if (currentView === 'links') {
-                linksViewBtn.classList.add('bg-accent', 'active-view', 'text-white');
-                linksViewBtn.classList.remove('text-gray-400', 'hover:bg-gray-700');
-                renderVideoLinks();
-            } else if (currentView === 'player') {
-                renderPlayerView();
+                linksViewBtn.classList.add(...activeClasses);
+                linksViewBtn.classList.remove(...inactiveClasses);
+                renderVideoLinks(); // Ensure links are rendered when switching to this view
             }
+            // No style update needed for 'player' view as the nav is hidden
         }
 
         // --- Personal List CRUD and Rendering ---
@@ -394,8 +396,10 @@
 
             if (sortedList.length === 0) {
                 itemListUl.innerHTML = `<li class="text-center text-gray-500 py-6">Your watch list is empty! Add your first item above.</li>`;
+                // Only hide the clear button if the list is truly empty
                 clearAllBtn.classList.add('hidden');
             } else {
+                // Show the clear button when items exist
                 clearAllBtn.classList.remove('hidden');
                 sortedList.forEach(item => {
                     const element = createItemElement(item); 
@@ -753,7 +757,7 @@
                 auth = getAuth(app);
                 
                 loadingIndicator.classList.remove('hidden');
-                updateInteractiveElements(false); // <--- Disable all UI elements immediately
+                updateInteractiveElements(false); // Disable all UI elements immediately
 
                 // Set up authentication listener
                 onAuthStateChanged(auth, async (user) => {
@@ -763,7 +767,7 @@
                         isAuthReady = true;
                         
                         // Authentication ready: enable UI, hide loading, show view
-                        updateInteractiveElements(true); // <--- ENABLE UI elements
+                        updateInteractiveElements(true); 
                         loadingIndicator.classList.add('hidden');
                         switchView('list');
 
@@ -784,6 +788,8 @@
                 console.error("Firebase Initialization Error:", error);
                 userIdDisplay.textContent = `ERROR: Initialization failed. See console.`;
                 loadingIndicator.classList.add('hidden');
+                // Ensure UI is enabled if initialization fails to allow user to see the error message
+                updateInteractiveElements(true); 
             }
         }
 
