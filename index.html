@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Realtime Watch List Dashboard</title>
+    <title>Realtime Watch List Dashboard (GitHub Sync)</title>
     <style>
         /* CSS Variables for Dark Dashboard Theme */
         :root {
@@ -84,17 +84,27 @@
         .button-load-more:hover {
             background-color: #3A4463;
         }
-        /* Sync Button Styling */
-        .sync-group {
-            display: flex;
-            gap: 10px;
+        
+        /* Sync Status & Instructions */
+        #syncStatusList, #syncStatusRequests {
+            font-size: 0.9em;
+            padding: 8px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            text-align: center;
+            background-color: #4A5568; 
+            color: white;
+        }
+        .sync-instruction-header {
+            color: var(--secondary-color);
+            text-align: center;
+            font-size: 0.9em;
             margin-bottom: 15px;
         }
-        .sync-group button {
-            flex-grow: 1;
-            padding: 8px 15px;
-            font-size: 0.9em;
+        .sync-instruction-header.github {
+            color: #58A6FF; /* GitHub Blue */
         }
+
 
         /* View Structure */
         .view { display: none; } 
@@ -231,13 +241,16 @@
 
     <section id="dashboardView" class="view container" style="display: block;">
         
-        <h1 class="main-header">Realtime Watch List</h1>
+        <h1 class="main-header">Realtime Watch List (GitHub Sync)</h1>
         
         <div class="dashboard-grid">
             <div class="column-left">
                 
                 <div class="card">
-                    <h3 class="highlight">Add New Item (Personal)</h3>
+                    <h3 class="highlight">Add New Item (Shared)</h3>
+                    <p class="sync-instruction-header github">
+                        🚀 **Real-Time Sync Activated!** Data syncs via GitHub Gist.
+                    </p>
                     <form id="addLinkForm">
                         <div class="input-group">
                             <div>
@@ -255,21 +268,14 @@
                                 <input type="url" id="imageUrl" placeholder="Paste image URL for thumbnail">
                              </div>
                         </div>
-                        <button type="submit" class="button button-primary">Add to List</button>
+                        <button type="submit" class="button button-primary">Add & Auto-Sync List</button>
                     </form>
                 </div>
 
                 <div class="card">
-                    <h3 class="highlight" id="listHeader">My Current Watch List (0 Titles)</h3>
+                    <h3 class="highlight" id="listHeader">Family Watch List (0 Titles)</h3>
+                    <div id="syncStatusList">🔄 Connecting to GitHub Gist...</div>
                     
-                    <div class="sync-group">
-                        <button class="button" onclick="exportData()">Export Data</button>
-                        <button class="button button-suggest" onclick="importData()">Import Data</button>
-                    </div>
-
-                    <div style="text-align:center; margin-bottom: 15px;">
-                        <button class="button-danger" onclick="clearPersonalList()">Clear All Personal List Items</button>
-                    </div>
                     <div id="animeListContainer">
                         </div>
                     <button class="button button-load-more" id="loadMoreBtn" onclick="loadMoreAnime()">Load More...</button>
@@ -280,7 +286,8 @@
             <div class="column-right">
                 
                 <div class="card">
-                    <h3 class="public-highlight">Public Watch Requests</h3>
+                    <h3 class="public-highlight">Public Watch Requests (Shared)</h3>
+                    <div id="syncStatusRequests">🔄 Connecting to GitHub Gist...</div>
                     
                     <form id="requestAnimeForm" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-bottom: 20px; align-items: end;">
                         <div>
@@ -323,11 +330,212 @@
     </section>
 
     <script>
+        // --- 🔑 CONFIGURATION: PASTE YOUR GITHUB DETAILS HERE 🔑 ---
+        // -------------------------------------------------------------------
+        // !!! IMPORTANT !!! Replace the three placeholder strings below with your keys
+        // -------------------------------------------------------------------
+        const GITHUB_TOKEN = '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'; 
+        const GIST_ID_LIST = 'aa4eb132f23a910620aa72f251755561';       // <-- FIRST Gist ID (for the main list)
+        const GIST_ID_REQUESTS = 'aa6b7a9e52eef31ad5a3c226daf3f2a5';    // <-- SECOND Gist ID (for the requests)
+        
+        // You can name the files anything, but they must be unique within their Gist.
+        const FILENAME_LIST = 'watchlists.json'; 
+        const FILENAME_REQUESTS = 'requestslists.json';
+        // -------------------------------------------------------------------
+
         // --- CONSTANTS AND STATE ---
         const ITEMS_PER_LOAD = 10;
         let visibleItemCount = 0;
+        
+        const syncStatusListElement = document.getElementById('syncStatusList');
+        const syncStatusRequestsElement = document.getElementById('syncStatusRequests');
 
-        // === VIEW MANAGEMENT ===
+        function checkConfig() {
+            if (GITHUB_TOKEN.startsWith('YOUR_GITHUB') || GIST_ID_LIST.startsWith('YOUR_WATCHLIST') || GIST_ID_REQUESTS.startsWith('YOUR_REQUESTS')) {
+                const errorMsg = '🛑 ERROR: Sync not configured. Please set GITHUB_TOKEN, GIST_ID_LIST, and GIST_ID_REQUESTS in the script.';
+                syncStatusListElement.textContent = errorMsg;
+                syncStatusRequestsElement.textContent = errorMsg;
+                return false;
+            }
+            return true;
+        }
+        
+        // === GITHUB GIST SYNC FUNCTIONS (GENERIC) ===
+        
+        // This function handles both fetching and updating data using the GitHub Gist API
+        async function handleGistData(gistId, fileName, data = null, statusElement) {
+            if (!checkConfig()) return data === null ? [] : null;
+
+            const GIST_URL = `https://api.github.com/gists/${gistId}`;
+            const isUpdate = data !== null;
+            
+            statusElement.textContent = isUpdate ? '📤 Saving data to GitHub Gist...' : '🔄 Fetching data from GitHub Gist...';
+
+            try {
+                const headers = {
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Authorization': `token ${GITHUB_TOKEN}`,
+                    'Content-Type': 'application/json'
+                };
+
+                if (isUpdate) {
+                    // --- UPDATE LOGIC ---
+                    const response = await fetch(GIST_URL, {
+                        method: 'PATCH', // PATCH is used to update Gists
+                        headers: headers,
+                        body: JSON.stringify({
+                            files: {
+                                [fileName]: {
+                                    content: JSON.stringify(data)
+                                }
+                            }
+                        })
+                    });
+                    
+                    if (!response.ok) throw new Error(`GitHub Update Failed: ${response.status} ${response.statusText}`);
+                    
+                    statusElement.textContent = `✅ Sync successful! Data saved to Gist.`;
+                    return true;
+                
+                } else {
+                    // --- FETCH LOGIC ---
+                    const response = await fetch(GIST_URL, {
+                        method: 'GET',
+                        headers: headers
+                    });
+
+                    if (!response.ok) {
+                         // If the Gist exists but the file doesn't, or the file is empty, return an empty array
+                         if (response.status === 404 || response.status === 422) {
+                            statusElement.textContent = `⚠️ Gist/File not found or empty. Initializing locally.`;
+                            return [];
+                         }
+                         throw new Error(`GitHub Fetch Failed: ${response.status} ${response.statusText}`);
+                    }
+                    
+                    const gistData = await response.json();
+                    const fileContent = gistData.files[fileName] ? gistData.files[fileName].content : '[]';
+                    const parsedData = JSON.parse(fileContent || '[]');
+                    
+                    statusElement.textContent = `✅ Sync successful! Loaded ${parsedData.length} items/requests.`;
+                    return parsedData;
+                }
+
+            } catch (error) {
+                console.error('GitHub Sync Failed:', error);
+                statusElement.textContent = `❌ Sync Failed. Loading local backup.`;
+                return data === null ? getLocalBackup(fileName) : false;
+            }
+        }
+        
+        // Helper to manage local storage fallback
+        function getLocalBackup(fileName) {
+            return JSON.parse(localStorage.getItem(fileName)) || [];
+        }
+        function saveLocalBackup(fileName, data) {
+            localStorage.setItem(fileName, JSON.stringify(data));
+        }
+
+        // === GIST SPECIFIC WRAPPERS ===
+
+        async function fetchSharedList() {
+            const list = await handleGistData(GIST_ID_LIST, FILENAME_LIST, null, syncStatusListElement);
+            saveLocalBackup(FILENAME_LIST, list);
+            return list;
+        }
+
+        async function updateSharedList(animeList) {
+            saveLocalBackup(FILENAME_LIST, animeList);
+            await handleGistData(GIST_ID_LIST, FILENAME_LIST, animeList, syncStatusListElement);
+        }
+
+        async function fetchSharedRequests() {
+            const requests = await handleGistData(GIST_ID_REQUESTS, FILENAME_REQUESTS, null, syncStatusRequestsElement);
+            saveLocalBackup(FILENAME_REQUESTS, requests);
+            return requests;
+        }
+
+        async function updateSharedRequests(requests) {
+            saveLocalBackup(FILENAME_REQUESTS, requests);
+            await handleGistData(GIST_ID_REQUESTS, FILENAME_REQUESTS, requests, syncStatusRequestsElement);
+        }
+
+        // === EVENT HANDLERS (WATCH LIST) ===
+        
+        async function handleAddLink(event) {
+             event.preventDefault();
+             const title = document.getElementById('linkTitle').value;
+             const link = document.getElementById('linkUrl').value;
+             const imageUrl = document.getElementById('imageUrl').value;
+             
+             let animeList = getLocalBackup(FILENAME_LIST);
+             animeList.unshift({ title, link, imageUrl }); 
+             
+             document.getElementById('addLinkForm').reset();
+             
+             visibleItemCount = 0; 
+             document.getElementById('animeListContainer').innerHTML = '';
+             displayAnimeList(); 
+
+             await updateSharedList(animeList); // Calls sync
+        }
+
+        async function deleteAnime(index) {
+            if (confirm('Are you sure you want to delete this item? This action will be synced immediately.')) {
+                let animeList = getLocalBackup(FILENAME_LIST);
+                
+                animeList.splice(index, 1);
+                
+                visibleItemCount = 0; 
+                document.getElementById('animeListContainer').innerHTML = '';
+                displayAnimeList(); 
+
+                await updateSharedList(animeList); // Calls sync
+            }
+        }
+        window.deleteAnime = deleteAnime;
+
+        // === EVENT HANDLERS (REQUESTS) ===
+        
+        async function handleRequestSubmit(event) {
+            event.preventDefault();
+            const name = document.getElementById('requesterName').value || 'Anonymous'; 
+            const title = document.getElementById('requestedTitle').value;
+
+            let requests = getLocalBackup(FILENAME_REQUESTS);
+            requests.unshift({ name, title, status: 'New' });
+
+            document.getElementById('requestAnimeForm').reset();
+            displayRequests();
+
+            await updateSharedRequests(requests); // Calls sync
+        }
+
+        async function updateRequestStatus(index, newStatus) {
+            let requests = getLocalBackup(FILENAME_REQUESTS);
+            if (index < 0 || index >= requests.length) return; 
+
+            requests[index].status = newStatus;
+            displayRequests(); 
+            
+            await updateSharedRequests(requests); // Calls sync
+        }
+        window.updateRequestStatus = updateRequestStatus;
+        
+        async function deleteRequest(index) {
+            if (confirm('Are you sure you want to permanently delete this request? This will be synced to all devices.')) {
+                let requests = getLocalBackup(FILENAME_REQUESTS);
+                requests.splice(index, 1);
+                displayRequests();
+                
+                await updateSharedRequests(requests); // Calls sync
+            }
+        }
+        window.deleteRequest = deleteRequest;
+
+
+        // === VIEW MANAGEMENT & RENDERING ===
+
         const allViews = document.querySelectorAll('.view');
 
         function showView(viewId) {
@@ -341,7 +549,6 @@
                 document.getElementById('addLinkForm').reset(); 
                 document.getElementById('requestAnimeForm').reset(); 
                 
-                // When returning to dashboard, reset and display the first page of the list
                 visibleItemCount = 0; 
                 document.getElementById('animeListContainer').innerHTML = '';
                 displayAnimeList(); 
@@ -360,125 +567,14 @@
         }
         window.loadVideoPlayer = loadVideoPlayer;
 
-        // === DATA HANDLERS (Anime List - Personal Links) ===
-        function getAnimeList() {
-            // Returns the entire list from local storage
-            return JSON.parse(localStorage.getItem('myAnimeList')) || [];
-        }
-
-        function saveAnimeList(animeList) {
-            localStorage.setItem('myAnimeList', JSON.stringify(animeList));
-        }
-        
-        function handleAddLink(event) {
-             event.preventDefault();
-             const title = document.getElementById('linkTitle').value;
-             const link = document.getElementById('linkUrl').value;
-             const imageUrl = document.getElementById('imageUrl').value;
-             
-             const animeList = getAnimeList();
-             // Add the new item to the *beginning* of the list (most recent first)
-             animeList.unshift({ title, link, imageUrl }); 
-             saveAnimeList(animeList);
-             
-             document.getElementById('addLinkForm').reset();
-             
-             // Reset list view and show the new item
-             visibleItemCount = 0; 
-             document.getElementById('animeListContainer').innerHTML = '';
-             displayAnimeList(); 
-        }
-
-        function deleteAnime(index) {
-            if (confirm('Are you sure you want to delete this item from your personal list?')) {
-                let animeList = getAnimeList();
-                
-                animeList.splice(index, 1);
-                saveAnimeList(animeList);
-                
-                // Re-render the visible items, starting from the beginning
-                visibleItemCount = 0; 
-                document.getElementById('animeListContainer').innerHTML = '';
-                displayAnimeList(); 
-            }
-        }
-        
-        function clearPersonalList() {
-            if (confirm('WARNING: Are you sure you want to clear ALL items from your personal watch list? This cannot be undone.')) {
-                saveAnimeList([]);
-                visibleItemCount = 0;
-                document.getElementById('animeListContainer').innerHTML = '';
-                displayAnimeList();
-            }
-        }
-        window.clearPersonalList = clearPersonalList;
-
-        // NEW: Manual Sync Functions
-        
-        async function exportData() {
-            const data = localStorage.getItem('myAnimeList');
-            if (!data || JSON.parse(data).length === 0) {
-                alert('Your list is empty. Nothing to export!');
-                return;
-            }
-
-            try {
-                // Use the modern clipboard API
-                await navigator.clipboard.writeText(data);
-                alert(`Export successful! ${JSON.parse(data).length} items copied to your clipboard. Paste this data into another device.`);
-            } catch (err) {
-                // Fallback for older browsers or permission issues
-                console.error('Could not copy data to clipboard:', err);
-                alert('Export failed. Check the console for errors or manually copy the data: ' + data);
-            }
-        }
-        window.exportData = exportData;
-
-        async function importData() {
-            if (!confirm('WARNING: Importing data will OVERWRITE your current personal watch list. Continue?')) {
-                return;
-            }
-            
-            try {
-                // Read data from the clipboard
-                const dataString = await navigator.clipboard.readText();
-                
-                let importedList;
-                try {
-                    importedList = JSON.parse(dataString);
-                } catch (e) {
-                    alert('Import failed: The data in your clipboard is not a valid list format.');
-                    return;
-                }
-
-                if (!Array.isArray(importedList)) {
-                    alert('Import failed: The pasted data is not a valid list.');
-                    return;
-                }
-                
-                saveAnimeList(importedList);
-                alert(`Import successful! ${importedList.length} items loaded. The dashboard will now refresh.`);
-                
-                // Refresh the dashboard to show new imported data
-                showView('dashboardView');
-
-            } catch (err) {
-                console.error('Could not read data from clipboard:', err);
-                alert('Import failed: Check console for errors. Ensure you have granted clipboard read permission to this site.');
-            }
-        }
-        window.importData = importData;
-
-
-        // Logic for loading the next batch of items
         function loadMoreAnime() {
-            displayAnimeList(true); // Call display function to append data
+            displayAnimeList(true);
         }
         window.loadMoreAnime = loadMoreAnime;
 
         function displayAnimeList(append = false) {
             const container = document.getElementById('animeListContainer');
-            const animeList = getAnimeList();
+            const animeList = getLocalBackup(FILENAME_LIST);
             const totalItems = animeList.length;
             const loadMoreBtn = document.getElementById('loadMoreBtn');
             
@@ -495,7 +591,7 @@
             
             const itemsToDisplay = animeList.slice(nextBatchStart, nextBatchEnd);
             
-            document.getElementById('listHeader').textContent = `My Current Watch List (${totalItems} Titles)`;
+            document.getElementById('listHeader').textContent = `Family Watch List (${totalItems} Titles)`;
 
             if (totalItems === 0) {
                 container.innerHTML = '<p style="text-align: center; color: var(--text-dim); padding: 10px;">Your list is empty. Add a new item above!</p>';
@@ -535,56 +631,16 @@
             }
         }
 
-        // === DATA HANDLERS (Anime Requests - Public Requests) ===
-        function getAnimeRequests() {
-            return JSON.parse(localStorage.getItem('animeRequests')) || [];
-        }
-
-        function saveAnimeRequests(requests) {
-            localStorage.setItem('animeRequests', JSON.stringify(requests));
-        }
-
-        function handleRequestSubmit(event) {
-            event.preventDefault();
-            const name = document.getElementById('requesterName').value || 'Anonymous'; 
-            const title = document.getElementById('requestedTitle').value;
-
-            const requests = getAnimeRequests();
-            requests.unshift({ name, title, status: 'New' }); // New requests at the top
-            saveAnimeRequests(requests);
-
-            document.getElementById('requestAnimeForm').reset();
-            displayRequests();
-        }
-
-        function updateRequestStatus(index, newStatus) {
-            let requests = getAnimeRequests();
-            if (index < 0 || index >= requests.length) return; 
-
-            requests[index].status = newStatus;
-            saveAnimeRequests(requests);
-            displayRequests(); 
-        }
-        
-        function deleteRequest(index) {
-            if (confirm('Are you sure you want to permanently delete this request?')) {
-                let requests = getAnimeRequests();
-                requests.splice(index, 1);
-                saveAnimeRequests(requests);
-                displayRequests();
-            }
-        }
-
         function displayRequests() {
             const tableBody = document.getElementById('requestTableBody');
-            const requests = getAnimeRequests();
+            const requests = getLocalBackup(FILENAME_REQUESTS);
             tableBody.innerHTML = '';
 
             if (requests.length === 0) {
                 const tr = document.createElement('tr');
                 const td = document.createElement('td');
                 td.colSpan = 4;
-                td.textContent = 'No public requests yet.';
+                td.textContent = 'No requests yet.';
                 td.style.textAlign = 'center';
                 tr.appendChild(td);
                 tableBody.appendChild(tr);
@@ -616,15 +672,23 @@
         }
 
         // === INITIALIZATION ===
+        async function initializeDashboard() {
+            // Fetch both lists asynchronously and wait for both to complete
+            await Promise.all([
+                fetchSharedList(),
+                fetchSharedRequests()
+            ]);
+
+            displayAnimeList();
+            displayRequests();
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('requestAnimeForm').addEventListener('submit', handleRequestSubmit);
             document.getElementById('addLinkForm').addEventListener('submit', handleAddLink);
             
-            window.deleteAnime = deleteAnime;
-            window.updateRequestStatus = updateRequestStatus;
-            window.deleteRequest = deleteRequest;
-
-            showView('dashboardView');
+            // Set up initial view and synchronization
+            initializeDashboard();
         });
     </script>
 
