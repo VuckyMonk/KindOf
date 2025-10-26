@@ -64,7 +64,14 @@
             <h1 class="text-5xl sm:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-600">
                 Realtime Watch List
             </h1>
-            <p id="userIdDisplay" class="mt-2 text-sm text-gray-500 font-mono">Loading User...</p>
+            <!-- User ID and Status Display -->
+            <div class="mt-2 text-sm text-gray-400 font-mono flex flex-wrap justify-center items-center gap-2">
+                <span id="authStatus" class="font-bold text-yellow-500">Loading...</span>
+                <span id="userIdDisplay">User ID: N/A</span>
+                <button id="copyUidBtn" title="Copy User ID" class="text-gray-500 hover:text-accent transition duration-150 p-1 rounded-md disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2.5M8 7H5a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-3" /></svg>
+                </button>
+            </div>
         </header>
 
         <!-- Navigation Tabs -->
@@ -208,7 +215,12 @@
         const suggesterInput = document.getElementById('suggesterInput');
         const requestListUl = document.getElementById('requestList');
         const addRequestBtn = document.getElementById('addRequestBtn');
+        
+        // New Auth Display Elements
         const userIdDisplay = document.getElementById('userIdDisplay');
+        const authStatusSpan = document.getElementById('authStatus');
+        const copyUidBtn = document.getElementById('copyUidBtn');
+
         const loadingIndicator = document.getElementById('loadingIndicator');
         
         // View Containers
@@ -224,7 +236,7 @@
 
         // --- Firebase Path Helpers ---
         function getPersonalListCollection() {
-            if (!currentUserId) throw new Error("User not authenticated for personal list access.");
+            if (!currentUserId) throw new Error("User not authenticated ($currentUserId is null). List item cannot be added.");
             // Path: /artifacts/{appId}/users/{userId}/personal_list
             return collection(db, 'artifacts', appId, 'users', currentUserId, 'personal_list');
         }
@@ -262,6 +274,29 @@
             return (match && match[1]) ? match[1] : null;
         }
 
+        /**
+         * Updates the User ID display and handles the copy functionality.
+         * @param {string | null} uid The user's unique ID.
+         * @param {boolean} isReady Authentication ready state.
+         */
+        function updateUserIdDisplay(uid, isReady) {
+            if (isReady && uid) {
+                authStatusSpan.textContent = "Ready";
+                authStatusSpan.className = 'font-bold text-green-500';
+                userIdDisplay.textContent = `User ID: ${uid}`;
+                copyUidBtn.disabled = false;
+                copyUidBtn.onclick = () => {
+                    document.execCommand('copy', false, uid);
+                    displayMessage("User ID copied!", false);
+                };
+            } else {
+                authStatusSpan.textContent = "Loading...";
+                authStatusSpan.className = 'font-bold text-yellow-500';
+                userIdDisplay.textContent = 'User ID: N/A';
+                copyUidBtn.disabled = true;
+            }
+        }
+
         // --- Authentication Ready Handler (New) ---
         function updateInteractiveElements(isEnabled) {
             // Personal List Inputs and Buttons
@@ -287,7 +322,7 @@
         }
         // --- View Switching Logic ---
 
-        function switchView(viewName) {
+        window.switchView = function(viewName) {
             currentView = viewName;
 
             // Toggle views visibility
@@ -414,7 +449,10 @@
         }
 
         async function addItem() { 
-            if (!isAuthReady) { displayMessage("Authentication not ready. Please wait.", true); return; }
+            if (!isAuthReady) { 
+                displayMessage("Authentication not ready. Please wait until 'Ready' status is shown.", true); 
+                return; 
+            }
             
             const title = itemInput.value.trim(); 
             const url = urlInput.value.trim(); 
@@ -431,6 +469,11 @@
             }
 
             try {
+                // Ensure currentUserId is set before attempting to get collection reference
+                if (!currentUserId) {
+                    throw new Error("User ID not available during addDoc call. Auth state is inconsistent.");
+                }
+
                 await addDoc(getPersonalListCollection(), {
                     title: title,
                     url: url,
@@ -442,8 +485,9 @@
                 urlInput.value = ''; 
                 displayMessage(`'${title}' added to personal list!`);
             } catch (error) {
-                console.error("Error adding item:", error);
-                displayMessage("Failed to add item. Check console.", true);
+                // CRITICAL: Log the full error object for better debugging
+                console.error("FIREBASE ERROR: Failed to add item. Check permissions/path:", error);
+                displayMessage("Failed to add item. Check browser console for details (FIREBASE ERROR).", true);
             }
         }
 
@@ -745,7 +789,7 @@
 
         async function initFirebase() {
             if (!firebaseConfig) {
-                userIdDisplay.textContent = 'ERROR: Firebase config missing.';
+                updateUserIdDisplay('ERROR: Config missing', false);
                 loadingIndicator.classList.add('hidden');
                 listView.classList.remove('hidden');
                 return;
@@ -758,18 +802,19 @@
                 
                 loadingIndicator.classList.remove('hidden');
                 updateInteractiveElements(false); // Disable all UI elements immediately
+                updateUserIdDisplay(null, false); // Set status to loading
 
                 // Set up authentication listener
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         currentUserId = user.uid;
-                        userIdDisplay.textContent = `User ID: ${currentUserId}`;
                         isAuthReady = true;
                         
-                        // Authentication ready: enable UI, hide loading, show view
+                        // Authentication ready: update UI, hide loading, show view
+                        updateUserIdDisplay(currentUserId, true);
                         updateInteractiveElements(true); 
                         loadingIndicator.classList.add('hidden');
-                        switchView('list');
+                        switchView(currentView);
 
                         // Start real-time listeners only after authentication is complete
                         setupRealtimeListeners();
@@ -780,16 +825,19 @@
                         } else {
                             // Fallback to anonymous sign-in if token is missing (for testing)
                             await signInAnonymously(auth);
+                            currentUserId = auth.currentUser?.uid || crypto.randomUUID(); // Set fallback ID immediately
+                            updateUserIdDisplay(currentUserId, true); // Update display even if anonymous
+                            isAuthReady = true;
                         }
                     }
                 });
 
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                userIdDisplay.textContent = `ERROR: Initialization failed. See console.`;
+                updateUserIdDisplay(`ERROR: Failed`, false);
                 loadingIndicator.classList.add('hidden');
-                // Ensure UI is enabled if initialization fails to allow user to see the error message
-                updateInteractiveElements(true); 
+                updateInteractiveElements(false); 
+                displayMessage("Initialization failed. Check console for Firebase errors.", true);
             }
         }
 
@@ -797,32 +845,43 @@
             if (!isAuthReady) return;
 
             // 1. Personal Watch List Listener (Private Data)
-            const personalQuery = query(getPersonalListCollection());
-            onSnapshot(personalQuery, (snapshot) => {
-                personalList = snapshot.docs.map(doc => ({ 
-                    id: doc.id, 
-                    ...doc.data() 
-                }));
-                // Re-render when data changes
-                renderList();
-            }, (error) => {
-                console.error("Personal List Snapshot Error:", error);
-                displayMessage("Failed to load personal list data.", true);
-            });
+            try {
+                const personalQuery = query(getPersonalListCollection());
+                onSnapshot(personalQuery, (snapshot) => {
+                    personalList = snapshot.docs.map(doc => ({ 
+                        id: doc.id, 
+                        ...doc.data() 
+                    }));
+                    // Re-render when data changes
+                    renderList();
+                }, (error) => {
+                    console.error("Personal List Snapshot Error:", error);
+                    displayMessage("Failed to load personal list data. (Snapshot Error)", true);
+                });
+            } catch (e) {
+                console.error("Error setting up Personal List Listener (Missing UserId or DB):", e);
+                displayMessage("Error setting up personal list listener.", true);
+            }
+
 
             // 2. Public Watch Requests Listener (Public Data)
-            const requestsQuery = query(getPublicRequestsCollection());
-            onSnapshot(requestsQuery, (snapshot) => {
-                publicRequests = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-                // Re-render when data changes
-                renderRequests();
-            }, (error) => {
-                console.error("Public Requests Snapshot Error:", error);
-                displayMessage("Failed to load public requests data.", true);
-            });
+            try {
+                const requestsQuery = query(getPublicRequestsCollection());
+                onSnapshot(requestsQuery, (snapshot) => {
+                    publicRequests = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    // Re-render when data changes
+                    renderRequests();
+                }, (error) => {
+                    console.error("Public Requests Snapshot Error:", error);
+                    displayMessage("Failed to load public requests data. (Snapshot Error)", true);
+                });
+            } catch (e) {
+                 console.error("Error setting up Public Requests Listener (Missing UserId or DB):", e);
+                 displayMessage("Error setting up public requests listener.", true);
+            }
         }
 
 
