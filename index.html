@@ -69,7 +69,7 @@
                 <span id="authStatus" class="font-bold text-yellow-500">Loading...</span>
                 <span id="userIdDisplay">User ID: N/A</span>
                 <button id="copyUidBtn" title="Copy User ID" class="text-gray-500 hover:text-accent transition duration-150 p-1 rounded-md disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2.5M8 7H5a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-3" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2.5M8 7H5a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-3M16 17v-4m-4 4v-4m-4 4v-4" /></svg>
                 </button>
             </div>
         </header>
@@ -303,7 +303,6 @@
             itemInput.disabled = !isEnabled;
             urlInput.disabled = !isEnabled;
             addItemBtn.disabled = !isEnabled;
-            // CRITICAL FIX: Ensure clearAllBtn is explicitly disabled/enabled
             clearAllBtn.disabled = !isEnabled; 
             
             // Public Request Inputs and Buttons
@@ -804,31 +803,45 @@
                 updateInteractiveElements(false); // Disable all UI elements immediately
                 updateUserIdDisplay(null, false); // Set status to loading
 
-                // Set up authentication listener
-                onAuthStateChanged(auth, async (user) => {
+                // --- 1. Attempt Primary Sign-in ---
+                if (initialAuthToken) {
+                    try {
+                        console.log("Attempting sign-in with custom token...");
+                        await signInWithCustomToken(auth, initialAuthToken);
+                        console.log("Primary sign-in successful.");
+                    } catch (tokenError) {
+                        console.error("Custom token sign-in failed. Falling back to anonymous sign-in.", tokenError);
+                        await signInAnonymously(auth);
+                        console.log("Anonymous fallback sign-in successful.");
+                    }
+                } else {
+                    console.log("Custom token not provided. Signing in anonymously.");
+                    await signInAnonymously(auth);
+                    console.log("Anonymous sign-in successful.");
+                }
+
+                // --- 2. Set up Auth State Listener (This runs after sign-in attempts finish) ---
+                onAuthStateChanged(auth, (user) => {
                     if (user) {
                         currentUserId = user.uid;
                         isAuthReady = true;
                         
-                        // Authentication ready: update UI, hide loading, show view
+                        // CRITICAL: Auth successful, enable UI and listeners
+                        console.log(`[AUTH READY] UI Enabled for User ID: ${currentUserId}`);
+                        
                         updateUserIdDisplay(currentUserId, true);
                         updateInteractiveElements(true); 
                         loadingIndicator.classList.add('hidden');
                         switchView(currentView);
 
-                        // Start real-time listeners only after authentication is complete
                         setupRealtimeListeners();
                     } else {
-                        // Attempt to sign in if not already signed in
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            // Fallback to anonymous sign-in if token is missing (for testing)
-                            await signInAnonymously(auth);
-                            currentUserId = auth.currentUser?.uid || crypto.randomUUID(); // Set fallback ID immediately
-                            updateUserIdDisplay(currentUserId, true); // Update display even if anonymous
-                            isAuthReady = true;
-                        }
+                        // This state means auth failed entirely or user signed out
+                        console.error("[AUTH FAILED] User is null. All sign-in attempts failed or user signed out.");
+                        updateUserIdDisplay(`ERROR: Auth Failed`, false);
+                        updateInteractiveElements(false);
+                        loadingIndicator.classList.add('hidden');
+                        displayMessage("CRITICAL: Failed to sign in and enable UI.", true);
                     }
                 });
 
