@@ -21,6 +21,27 @@
             text-decoration: line-through;
             font-style: italic;
         }
+        /* Video Container to maintain 16:9 aspect ratio */
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 Aspect Ratio */
+            background-color: #000;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        }
+        .video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .active-view {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
     </style>
     <script>
         tailwind.config = {
@@ -48,7 +69,7 @@
 
         <!-- Navigation Tabs -->
         <nav class="flex justify-center mb-8 bg-secondary-dark rounded-xl p-2 shadow-xl border border-gray-700">
-            <button id="listViewBtn" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg transition duration-200 text-white bg-accent active-view">
+            <button id="listViewBtn" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg transition duration-200 text-white active-view">
                 Watch Lists
             </button>
             <button id="linksViewBtn" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg transition duration-200 text-gray-400 hover:bg-gray-700">
@@ -66,7 +87,7 @@
                 <p class="mt-2">Initializing database and authenticating...</p>
             </div>
 
-            <!-- List View (Default) -->
+            <!-- 1. List View (Default) -->
             <div id="listView" class="hidden">
                 <!-- Input Form (Personal List) -->
                 <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl mb-8 border border-gray-700">
@@ -74,7 +95,7 @@
                     <div class="flex flex-col md:flex-row gap-3">
                         <input type="text" id="itemInput" placeholder="Enter item title (e.g., Chainsaw Man)"
                                class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-accent focus:border-accent border-transparent transition duration-200 md:w-2/5 w-full">
-                        <input type="url" id="urlInput" placeholder="Paste watch link (Optional)"
+                        <input type="url" id="urlInput" placeholder="Paste watch link (Optional - YouTube preferred)"
                                class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-accent focus:border-accent border-transparent transition duration-200 md:w-2/5 w-full">
                         <button id="addItemBtn"
                                 class="bg-accent hover:bg-accent-hover text-white font-bold py-3 px-6 rounded-lg transition duration-300 shadow-md transform hover:scale-[1.02] active:scale-[0.98] md:w-1/5 w-full">
@@ -126,15 +147,29 @@
                 </div>
             </div>
 
-            <!-- Video Links View -->
+            <!-- 2. Video Links View -->
             <div id="videoLinksView" class="hidden">
                 <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl border border-gray-700">
                     <h2 class="text-xl font-semibold mb-4 border-b border-gray-700 pb-3 text-cyan-300">My Saved Watch Links</h2>
-                    <div id="linksContainer" class="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                    
+                    <!-- New Table Header for Links -->
+                    <div class="grid grid-cols-12 text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-600 pb-2 mb-3">
+                        <span class="col-span-5">Title</span>
+                        <span class="col-span-4">Link</span>
+                        <span class="col-span-3 text-right">Actions</span>
+                    </div>
+                    
+                    <div id="linksContainer" class="space-y-2 max-h-[70vh] overflow-y-auto pr-2">
                         <!-- Video links will be injected here -->
                     </div>
                 </div>
             </div>
+            
+            <!-- 3. Video Player View (The "Next Page") -->
+            <div id="videoPlayerView" class="hidden p-4 bg-secondary-dark rounded-xl shadow-2xl border border-gray-700">
+                <!-- Content injected by renderPlayerView() -->
+            </div>
+            
         </div>
     </div>
 
@@ -158,6 +193,8 @@
         let personalList = [];
         let publicRequests = [];
         let isAuthReady = false;
+        let currentView = 'list';
+        let currentlyPlaying = null; // Stores the item object when video is playing
 
         // --- DOM Elements ---
         const itemInput = document.getElementById('itemInput');
@@ -173,13 +210,17 @@
         const addRequestBtn = document.getElementById('addRequestBtn');
         const userIdDisplay = document.getElementById('userIdDisplay');
         const loadingIndicator = document.getElementById('loadingIndicator');
+        
+        // View Containers
         const listView = document.getElementById('listView');
         const videoLinksView = document.getElementById('videoLinksView');
+        const videoPlayerView = document.getElementById('videoPlayerView');
+
+        // Nav Buttons
         const listViewBtn = document.getElementById('listViewBtn');
         const linksViewBtn = document.getElementById('linksViewBtn');
+        
         const linksContainer = document.getElementById('linksContainer');
-
-        let currentView = 'list';
 
         // --- Firebase Path Helpers ---
         function getPersonalListCollection() {
@@ -212,6 +253,14 @@
             // Simple default to https for user convenience
             return 'https://' + trimmedUrl;
         }
+        
+        // Function to extract YouTube video ID
+        function extractYouTubeId(url) {
+            // Regex to match various YouTube URL formats (watch, embed, shortener, etc.)
+            const regex = /(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+            const match = url.match(regex);
+            return (match && match[1]) ? match[1] : null;
+        }
 
         // --- View Switching Logic ---
 
@@ -221,23 +270,30 @@
             // Toggle views visibility
             listView.classList.toggle('hidden', currentView !== 'list');
             videoLinksView.classList.toggle('hidden', currentView !== 'links');
+            videoPlayerView.classList.toggle('hidden', currentView !== 'player');
 
+            // Hide nav when in player view
+            document.querySelector('nav').classList.toggle('hidden', currentView === 'player');
+            
             // Update button styles
             const listClasses = ['bg-accent', 'active-view', 'text-white'];
-            const linkClasses = ['text-gray-400', 'hover:bg-gray-700'];
+            const linkClasses = ['text-gray-400', 'hover:bg-gray-700', 'bg-accent', 'active-view', 'text-white'];
+
+            listViewBtn.classList.remove(...listClasses, ...linkClasses);
+            linksViewBtn.classList.remove(...listClasses, ...linkClasses);
+            
+            listViewBtn.classList.add('text-gray-400', 'hover:bg-gray-700');
+            linksViewBtn.classList.add('text-gray-400', 'hover:bg-gray-700');
 
             if (currentView === 'list') {
-                listViewBtn.classList.add(...listClasses);
-                listViewBtn.classList.remove(...linkClasses);
-                linksViewBtn.classList.remove(...listClasses);
-                linksViewBtn.classList.add(...linkClasses);
-                renderList(); // Ensure list is refreshed
-            } else { // 'links'
-                linksViewBtn.classList.add(...listClasses);
-                linksViewBtn.classList.remove(...linkClasses);
-                listViewBtn.classList.remove(...listClasses);
-                listViewBtn.classList.add(...linkClasses);
+                listViewBtn.classList.add('bg-accent', 'active-view', 'text-white');
+                listViewBtn.classList.remove('text-gray-400', 'hover:bg-gray-700');
+            } else if (currentView === 'links') {
+                linksViewBtn.classList.add('bg-accent', 'active-view', 'text-white');
+                linksViewBtn.classList.remove('text-gray-400', 'hover:bg-gray-700');
                 renderVideoLinks();
+            } else if (currentView === 'player') {
+                renderPlayerView();
             }
         }
 
@@ -326,7 +382,7 @@
                 });
             }
             
-            // If the links view is active, update it
+            // If the links view is active, update it (needed in case of a list change)
             if (currentView === 'links') {
                 renderVideoLinks();
             }
@@ -541,7 +597,55 @@
             }
         }
 
-        // --- Video Links Rendering ---
+        // --- Video Player Logic ---
+        
+        // Function to render the dedicated video player page
+        function renderPlayerView() {
+            if (!currentlyPlaying || !currentlyPlaying.url) {
+                videoPlayerView.innerHTML = `<div class="text-red-400 py-10 text-center">No video selected or link is invalid.</div>`;
+                return;
+            }
+
+            const safeUrl = sanitizeUrl(currentlyPlaying.url);
+            const videoId = extractYouTubeId(safeUrl);
+            const embedUrl = videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0` : null;
+
+            if (!embedUrl) {
+                videoPlayerView.innerHTML = `
+                    <div class="text-red-400 py-10 text-center">
+                        <p class="text-xl mb-4">Cannot embed this video.</p>
+                        <p class="text-sm text-gray-400">Only standard YouTube links are currently supported for playing on this page.</p>
+                        <p class="text-sm text-gray-400 mt-2">Attempted URL: <a href="${safeUrl}" target="_blank" class="text-purple-400">${safeUrl}</a></p>
+                        <button onclick="switchView('links')" class="mt-6 inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-red-300 bg-red-900/50 hover:bg-red-900 transition duration-150">
+                            &larr; Back to Links
+                        </button>
+                    </div>`;
+                return;
+            }
+
+            videoPlayerView.innerHTML = `
+                <button onclick="switchView('links')" class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-cyan-300 bg-cyan-900/50 hover:bg-cyan-900 transition duration-150 mb-6">
+                    &larr; Back to Links
+                </button>
+                <h2 class="text-3xl font-bold text-white mb-4">${currentlyPlaying.title}</h2>
+                <div class="video-container">
+                    <iframe
+                        src="${embedUrl}"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowfullscreen
+                        loading="lazy"
+                    ></iframe>
+                </div>
+            `;
+        }
+
+        // Function to initiate playback and switch to the player view
+        window.playVideo = function(item) {
+            currentlyPlaying = item;
+            switchView('player');
+        }
+
+        // --- Video Links Rendering (Updated) ---
 
         function renderVideoLinks() {
             linksContainer.innerHTML = '';
@@ -556,23 +660,57 @@
 
             links.forEach(item => {
                 const safeUrl = sanitizeUrl(item.url);
+                const videoId = extractYouTubeId(safeUrl);
+                const canPlay = videoId !== null;
                 const displayUrl = safeUrl.replace(/^(https?:\/\/(www\.)?)/, '').split('/')[0];
 
+                // Use the grid layout to match the new header
                 const linkElement = document.createElement('div');
-                linkElement.className = 'bg-gray-800 p-4 rounded-lg shadow-md flex justify-between items-center transition duration-200 hover:bg-gray-700/80 border border-gray-700';
+                linkElement.className = 'grid grid-cols-12 items-center bg-gray-800 p-3 rounded-lg shadow-md transition duration-200 hover:bg-gray-700/80 border border-gray-700';
 
-                linkElement.innerHTML = `
-                    <div class="min-w-0 mr-4">
-                        <p class="text-lg font-bold text-white truncate">${item.title}</p>
-                        <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" 
-                           class="text-sm text-cyan-400 hover:text-cyan-300 truncate font-mono block mt-1">
-                            ${displayUrl}
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                        </a>
-                    </div>
-                `;
+                // 1. Title (col-span-5)
+                const titleDiv = document.createElement('div');
+                titleDiv.className = 'col-span-5 min-w-0 pr-2';
+                titleDiv.innerHTML = `<p class="text-sm font-bold text-white truncate">${item.title}</p>`;
+                linkElement.appendChild(titleDiv);
+
+                // 2. URL (col-span-4)
+                const urlDiv = document.createElement('div');
+                urlDiv.className = 'col-span-4 min-w-0 pr-2';
+                const urlAnchor = document.createElement('a');
+                urlAnchor.href = safeUrl;
+                urlAnchor.target = '_blank';
+                urlAnchor.rel = 'noopener noreferrer';
+                urlAnchor.className = 'text-xs text-purple-400 hover:text-purple-300 truncate font-mono block';
+                urlAnchor.textContent = displayUrl;
+                urlDiv.appendChild(urlAnchor);
+                linkElement.appendChild(urlDiv);
+
+                // 3. Actions (col-span-3, right-aligned)
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'col-span-3 flex-shrink-0 flex items-center justify-end space-x-2';
+                linkElement.appendChild(actionsDiv);
+                
+                // External Link Button (Always present)
+                const externalLinkBtn = document.createElement('a');
+                externalLinkBtn.href = safeUrl;
+                externalLinkBtn.target = '_blank';
+                externalLinkBtn.rel = 'noopener noreferrer';
+                externalLinkBtn.title = 'Open Link in New Tab';
+                externalLinkBtn.className = 'p-2 rounded-full bg-gray-700 hover:bg-gray-600 transition duration-150';
+                externalLinkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>`;
+                actionsDiv.appendChild(externalLinkBtn);
+
+                // Play Button (Only for YouTube)
+                if (canPlay) {
+                    const playBtn = document.createElement('button');
+                    playBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>`;
+                    playBtn.title = 'Play Video on Page';
+                    playBtn.className = 'p-2 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white transition duration-150 shadow-lg';
+                    // Pass the entire item object to playVideo
+                    playBtn.addEventListener('click', () => playVideo(item));
+                    actionsDiv.appendChild(playBtn);
+                }
                 
                 linksContainer.appendChild(linkElement);
             });
@@ -664,7 +802,7 @@
         window.onload = () => {
             initFirebase();
             
-            // Navigation Listeners (FIX: Removed inline onclick and attached listeners here)
+            // Navigation Listeners
             listViewBtn.addEventListener('click', () => switchView('list'));
             linksViewBtn.addEventListener('click', () => switchView('links'));
 
