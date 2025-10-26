@@ -84,6 +84,17 @@
         .button-load-more:hover {
             background-color: #3A4463;
         }
+        /* Sync Button Styling */
+        .sync-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .sync-group button {
+            flex-grow: 1;
+            padding: 8px 15px;
+            font-size: 0.9em;
+        }
 
         /* View Structure */
         .view { display: none; } 
@@ -250,6 +261,12 @@
 
                 <div class="card">
                     <h3 class="highlight" id="listHeader">My Current Watch List (0 Titles)</h3>
+                    
+                    <div class="sync-group">
+                        <button class="button" onclick="exportData()">Export Data</button>
+                        <button class="button button-suggest" onclick="importData()">Import Data</button>
+                    </div>
+
                     <div style="text-align:center; margin-bottom: 15px;">
                         <button class="button-danger" onclick="clearPersonalList()">Clear All Personal List Items</button>
                     </div>
@@ -376,8 +393,6 @@
             if (confirm('Are you sure you want to delete this item from your personal list?')) {
                 let animeList = getAnimeList();
                 
-                // Delete logic must be based on the original full index, not the visible index.
-                // Since displayAnimeList loads from the start, we can rely on the index in the saved list.
                 animeList.splice(index, 1);
                 saveAnimeList(animeList);
                 
@@ -398,7 +413,64 @@
         }
         window.clearPersonalList = clearPersonalList;
 
-        // NEW FUNCTION: Logic for loading the next batch of items
+        // NEW: Manual Sync Functions
+        
+        async function exportData() {
+            const data = localStorage.getItem('myAnimeList');
+            if (!data || JSON.parse(data).length === 0) {
+                alert('Your list is empty. Nothing to export!');
+                return;
+            }
+
+            try {
+                // Use the modern clipboard API
+                await navigator.clipboard.writeText(data);
+                alert(`Export successful! ${JSON.parse(data).length} items copied to your clipboard. Paste this data into another device.`);
+            } catch (err) {
+                // Fallback for older browsers or permission issues
+                console.error('Could not copy data to clipboard:', err);
+                alert('Export failed. Check the console for errors or manually copy the data: ' + data);
+            }
+        }
+        window.exportData = exportData;
+
+        async function importData() {
+            if (!confirm('WARNING: Importing data will OVERWRITE your current personal watch list. Continue?')) {
+                return;
+            }
+            
+            try {
+                // Read data from the clipboard
+                const dataString = await navigator.clipboard.readText();
+                
+                let importedList;
+                try {
+                    importedList = JSON.parse(dataString);
+                } catch (e) {
+                    alert('Import failed: The data in your clipboard is not a valid list format.');
+                    return;
+                }
+
+                if (!Array.isArray(importedList)) {
+                    alert('Import failed: The pasted data is not a valid list.');
+                    return;
+                }
+                
+                saveAnimeList(importedList);
+                alert(`Import successful! ${importedList.length} items loaded. The dashboard will now refresh.`);
+                
+                // Refresh the dashboard to show new imported data
+                showView('dashboardView');
+
+            } catch (err) {
+                console.error('Could not read data from clipboard:', err);
+                alert('Import failed: Check console for errors. Ensure you have granted clipboard read permission to this site.');
+            }
+        }
+        window.importData = importData;
+
+
+        // Logic for loading the next batch of items
         function loadMoreAnime() {
             displayAnimeList(true); // Call display function to append data
         }
@@ -410,12 +482,10 @@
             const totalItems = animeList.length;
             const loadMoreBtn = document.getElementById('loadMoreBtn');
             
-            // Update header count only if we are starting a fresh display (not just appending)
             if (!append) {
                  visibleItemCount = 0;
             }
 
-            // Calculate the next batch of items to show
             const nextBatchStart = visibleItemCount;
             const nextBatchEnd = Math.min(nextBatchStart + ITEMS_PER_LOAD, totalItems);
             
@@ -423,7 +493,6 @@
                 container.innerHTML = '';
             }
             
-            // Slice the list to get only the new items for the current page/load
             const itemsToDisplay = animeList.slice(nextBatchStart, nextBatchEnd);
             
             document.getElementById('listHeader').textContent = `My Current Watch List (${totalItems} Titles)`;
@@ -435,7 +504,6 @@
             }
 
             itemsToDisplay.forEach((anime, indexOffset) => {
-                // The actual index in the full list is 'nextBatchStart + indexOffset'
                 const actualIndex = nextBatchStart + indexOffset;
                 
                 const animeDiv = document.createElement('div');
@@ -444,7 +512,6 @@
                 const imageSrc = anime.imageUrl && anime.imageUrl.startsWith('http') ? anime.imageUrl : 'https://via.placeholder.com/80x100?text=No+Image';
 
                 const linkContent = anime.link ? 
-                    // Pass the actual index for deletion to work correctly on the full list
                     `<a onclick="loadVideoPlayer('${anime.title.replace(/'/g, "\\'")}', '${anime.link.replace(/'/g, "\\'")}')" title="Play Link">${anime.title}</a>` :
                     `<span>${anime.title} (No Link)</span>`;
 
@@ -458,10 +525,8 @@
                 container.appendChild(animeDiv);
             });
             
-            // Update the count of visible items
             visibleItemCount = nextBatchEnd; 
 
-            // Handle the Load More button visibility
             if (visibleItemCount < totalItems) {
                 loadMoreBtn.style.display = 'block';
                 loadMoreBtn.textContent = `Load More (${totalItems - visibleItemCount} remaining)`;
@@ -471,7 +536,6 @@
         }
 
         // === DATA HANDLERS (Anime Requests - Public Requests) ===
-        // NOTE: Request list remains simple as it's assumed to be much shorter
         function getAnimeRequests() {
             return JSON.parse(localStorage.getItem('animeRequests')) || [];
         }
