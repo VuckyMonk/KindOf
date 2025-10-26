@@ -3,247 +3,479 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Anime List</title>
+    <title>Realtime Watch List Dashboard</title>
     <style>
+        /* CSS Variables for Dark Dashboard Theme */
+        :root {
+            --primary-color: #A064FF; /* Bright Violet/Purple Accent */
+            --secondary-color: #FFC107; /* Suggest Item Yellow Accent */
+            --background-dark: #1E2335; /* Main Background Color */
+            --card-dark: #2A314A; /* Card Background Color */
+            --text-light: #E0E6F7; /* Light Text */
+            --text-dim: #9FA8DA; /* Dim/Placeholder Text */
+            --border-dark: #3A4463; /* Card/Input Border */
+            --header-gradient: linear-gradient(90deg, #A064FF, #D093FF);
+        }
+
         /* General Styles */
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
-            background-color: #f4f4f9; 
-            color: #333; 
+            background-color: var(--background-dark); 
+            color: var(--text-light); 
             margin: 0; 
-            padding: 20px;
+            padding: 30px 20px;
         }
         .container { 
-            max-width: 800px; 
+            max-width: 1100px; 
             margin: auto; 
-            background: #ffffff; 
-            padding: 20px; 
-            border-radius: 8px; 
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
+            background: var(--background-dark); 
+            padding: 0; 
+            border-radius: 12px; 
         }
-        h1 { 
-            text-align: center; 
-            color: #4a4a88; 
+        .main-header {
+            font-size: 3em;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 30px;
+            background-image: var(--header-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 10px rgba(160, 100, 255, 0.5);
         }
-        button, .action-button {
+
+        /* Buttons */
+        button, .button {
             border: none;
-            padding: 12px 20px;
-            border-radius: 5px;
+            padding: 12px 24px;
+            border-radius: 6px;
             font-size: 1em;
             font-weight: bold;
             cursor: pointer;
-            text-decoration: none;
             color: white;
-            display: inline-block;
-            text-align: center;
+            transition: background-color 0.3s ease, transform 0.1s;
+            white-space: nowrap;
+        }
+        .button-primary { 
+            background-color: var(--primary-color); 
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        .button-primary:hover { background-color: #8C52E8; }
+        .button-suggest { background-color: var(--secondary-color); color: #1E2335; } 
+        .button-suggest:hover { background-color: #FFB300; }
+        .button-danger { background-color: #CF6679; color: var(--text-light); }
+        .button-danger:hover { background-color: #B00020; }
+        
+        /* Back Button on Player View */
+        #playerView .button-back {
+            background-color: var(--border-dark);
+            color: var(--text-light);
+            padding: 10px 20px;
+            margin-bottom: 15px;
+        }
+        #playerView .button-back:hover {
+             background-color: #3A4463;
         }
 
-        /* List View Styles */
-        #listView .add-button {
-            display: block;
-            width: 200px;
-            margin: 20px auto;
-            background: #28a745;
+        /* View Structure */
+        .view { display: none; } 
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
         }
-        #listView .add-button:hover {
-            background: #218838;
+
+        /* Card Styles */
+        .card {
+            background-color: var(--card-dark);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
         }
+        .card h3 {
+            color: var(--text-light);
+            padding-bottom: 8px;
+            margin-top: 0;
+            font-size: 1.4em;
+        }
+        .card h3.highlight {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--border-dark);
+        }
+        .card h3.public-highlight {
+            color: var(--secondary-color);
+            border-bottom: 2px solid var(--border-dark);
+        }
+        
+        /* List Item Styles */
         .anime-item { 
-            background: #eef; 
-            padding: 15px; 
-            margin-bottom: 10px; 
-            border-radius: 5px; 
-            border-left: 5px solid #6677cc; 
+            background: var(--border-dark); 
+            padding: 10px 15px; 
+            margin-bottom: 8px; 
+            border-radius: 6px; 
+            border-left: 4px solid var(--primary-color); 
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
+        /* Make links look clickable, but keep them in-theme */
         .anime-item a { 
             text-decoration: none; 
-            font-weight: bold; 
-            font-size: 1.2em; 
-            color: #333; 
+            font-weight: 500; 
+            font-size: 1.1em; 
+            color: var(--text-light); 
+            cursor: pointer;
+            transition: color 0.2s;
         }
-        .anime-item a:hover { 
-            color: #4a4a88; 
+        .anime-item a:hover {
+            color: var(--primary-color);
         }
-        .anime-item .delete-btn {
-            background-color: #dc3545;
-            color: white;
-            padding: 5px 10px;
-            font-size: 0.8em;
-            border-radius: 4px;
-        }
-        .anime-item .delete-btn:hover {
-            background-color: #c82333;
+        .anime-item span { 
+            font-weight: 500; 
+            font-size: 1.1em; 
+            color: var(--text-dim); 
         }
 
-        /* Add View Styles */
-        #addView {
-            max-width: 600px;
+        /* Form Layout */
+        #addLinkForm {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 15px;
+            align-items: end;
+            margin-bottom: 10px;
         }
-        #addView form { 
+        #addLinkForm .input-group { 
             display: flex; 
-            flex-direction: column; 
+            gap: 10px;
         }
-        #addView label { 
-            margin-bottom: 5px; 
-            font-weight: bold; 
+        #addLinkForm .input-group > div { 
+            flex: 1; 
         }
-        #addView input { 
-            padding: 10px; 
-            margin-bottom: 15px; 
-            border: 1px solid #ccc; 
-            border-radius: 4px; 
+        input[type="text"], input[type="url"] { 
+            padding: 12px; 
+            border: 1px solid var(--border-dark); 
+            border-radius: 6px; 
             font-size: 1em; 
+            width: 100%; 
+            box-sizing: border-box; 
+            background-color: #1E2335;
+            color: var(--text-light);
         }
-        #addView .save-button { 
-            background: #007bff; 
+        
+        /* Request Table Styles (same as before) */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.85em; }
+        th, td { padding: 10px; border: 1px solid var(--border-dark); text-align: left; vertical-align: middle; }
+        thead { background-color: var(--primary-color); color: white; font-weight: 600; }
+        #requestTableBody tr td:nth-child(1) { width: 40%; }
+        #requestTableBody tr td:nth-child(2) { width: 15%; } 
+        #requestTableBody tr td:nth-child(3) { width: 15%; } 
+        #requestTableBody tr td:nth-child(4) { width: 30%; } 
+        .status-tag { padding: 4px 8px; border-radius: 15px; font-size: 0.8em; font-weight: bold; display: inline-block; min-width: 60px; text-align: center; }
+        .status-tag.New { background-color: #E6EE9C; color: #333; }
+        .status-tag.Checking { background-color: #81C784; color: #333; }
+        .status-tag.On-Hold { background-color: #FFD54F; color: #333; }
+        .status-tag.Completed { background-color: var(--primary-color); color: white; } 
+
+        /* Action Buttons (same as before) */
+        .action-group { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-start; }
+        .action-group button { padding: 4px 6px; font-size: 0.75em; border-radius: 3px; background-color: var(--border-dark); color: var(--text-light); }
+        .action-group button:hover { background-color: var(--primary-color); }
+        .btn-check { background-color: #5CB85C; } 
+        .btn-hold { background-color: #F0AD4E; }  
+        .btn-complete { background-color: #4527A0; }
+        .btn-delete { background-color: #D9534F; }
+
+        /* Video Player Specific Styles */
+        #videoPlayerFrame {
+            width: 100%;
+            height: 600px; /* Large, standard video size */
+            border: 4px solid var(--primary-color);
+            border-radius: 8px;
+            background-color: #000;
         }
-        #addView .save-button:hover { 
-            background: #0056b3; 
-        }
-        #addView .back-button {
-            background-color: #6c757d;
-            margin-top: 10px;
-        }
-        #addView .back-button:hover {
-            background-color: #5a6268;
+        .player-container {
+            padding: 20px;
+            background-color: var(--card-dark);
+            border-radius: 12px;
         }
 
     </style>
 </head>
 <body>
 
-    <section id="listView" class="container">
-        <h1>My Anime Watch List</h1>
-        <button class="add-button" onclick="showAddView()">Add New Anime</button>
-        <div id="animeListContainer">
+    <section id="dashboardView" class="view container" style="display: block;">
+        
+        <h1 class="main-header">Realtime Watch List</h1>
+        
+        <div class="dashboard-grid">
+            <div class="column-left">
+                
+                <div class="card">
+                    <h3 class="highlight">Add New Item (Personal)</h3>
+                    <form id="addLinkForm">
+                        <div class="input-group">
+                            <div>
+                                <input type="text" id="linkTitle" placeholder="Enter item title (e.g., Chainsaw Man)" required>
+                            </div>
+                            <div>
+                                <input type="url" id="linkUrl" placeholder="Paste watch link (Optional - YouTube/Other)">
+                            </div>
+                        </div>
+                        <button type="submit" class="button button-primary">Add to List</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3 class="highlight" id="listHeader">My Current Watch List (0 Titles)</h3>
+                    <div style="text-align:center; margin-bottom: 15px;">
+                        <button class="button-danger" onclick="clearPersonalList()">Clear All Personal List Items</button>
+                    </div>
+                    <div id="animeListContainer">
+                        </div>
+                </div>
+
             </div>
+
+            <div class="column-right">
+                
+                <div class="card">
+                    <h3 class="public-highlight">Public Watch Requests</h3>
+                    
+                    <form id="requestAnimeForm" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-bottom: 20px; align-items: end;">
+                        <div>
+                            <input type="text" id="requestedTitle" placeholder="Item to request (e.g., One Piece)" required>
+                        </div>
+                        <div>
+                            <input type="text" id="requesterName" placeholder="Your Name (Optional)">
+                        </div>
+                        <button type="submit" class="button button-suggest">Suggest Item</button>
+                    </form>
+
+                    <div id="requestTableContainer">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>TITLE</th>
+                                    <th>SUGGESTED BY</th>
+                                    <th>STATUS</th>
+                                    <th>ACTION/STATUS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="requestTableBody">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
     </section>
-
-    <section id="addView" class="container" style="display: none;">
-        <h1>Add a New Anime</h1>
-        <form id="addAnimeForm">
-            <label for="animeTitle">Anime Title:</label>
-            <input type="text" id="animeTitle" required>
-            
-            <label for="animeLink">Watch Link:</label>
-            <input type="url" id="animeLink" placeholder="https://example.com" required>
-
-            <button type="submit" class="save-button">Save to List</button>
-        </form>
-        <button class="back-button" onclick="showListView()">Back to my list</button>
+    
+    <section id="playerView" class="view container">
+        <button class="button button-back" onclick="showView('dashboardView')">← Back to Dashboard</button>
+        <div class="player-container">
+            <h2 id="playerTitle" style="margin-top: 0; text-align: left;">Loading Video...</h2>
+            <iframe id="videoPlayerFrame" title="Anime Video Player" allowfullscreen></iframe>
+        </div>
     </section>
 
     <script>
-        // === GLOBAL VARIABLES ===
-        const listView = document.getElementById('listView');
-        const addView = document.getElementById('addView');
-        const animeListContainer = document.getElementById('animeListContainer');
-        const addAnimeForm = document.getElementById('addAnimeForm');
+        // === VIEW MANAGEMENT ===
+        const allViews = document.querySelectorAll('.view');
 
-        // === VIEW SWITCHING LOGIC ===
-        function showListView() {
-            addView.style.display = 'none';
-            listView.style.display = 'block';
-            displayAnimeList(); // Refresh the list every time we show it
+        function showView(viewId) {
+            allViews.forEach(view => {
+                view.style.display = 'none';
+            });
+            document.getElementById(viewId).style.display = 'block';
+            
+            if (viewId === 'dashboardView') {
+                // When returning to dashboard, ensure player is reset (stops video/audio)
+                document.getElementById('videoPlayerFrame').src = ''; 
+                document.getElementById('addLinkForm').reset(); 
+                document.getElementById('requestAnimeForm').reset(); 
+                displayAnimeList();
+                displayRequests();
+            }
         }
-
-        function showAddView() {
-            listView.style.display = 'none';
-            addView.style.display = 'block';
-            addAnimeForm.reset(); // Clear form fields
+        
+        // FUNCTION: Loads the video link into the iframe and switches view
+        function loadVideoPlayer(title, url) {
+            if (!url) {
+                alert(`Error: Cannot play "${title}". No link provided for this item.`);
+                return;
+            }
+            document.getElementById('playerTitle').textContent = `Watching: ${title}`;
+            
+            // NOTE: Many major video sites (like YouTube) block embedding in iframes 
+            // from unlisted domains. This feature is best for links you control or sites 
+            // that specifically allow embedding. For YouTube, you must use the 'embed' URL.
+            document.getElementById('videoPlayerFrame').src = url;
+            
+            showView('playerView');
         }
+        window.loadVideoPlayer = loadVideoPlayer; // Expose to HTML
 
-        // === DATA HANDLING LOGIC ===
-
-        /**
-         * Reads the anime list from localStorage.
-         * @returns {Array} An array of anime objects.
-         */
+        // === DATA HANDLERS (Anime List - Personal Links) ===
         function getAnimeList() {
             return JSON.parse(localStorage.getItem('myAnimeList')) || [];
         }
 
-        /**
-         * Saves the anime list to localStorage.
-         * @param {Array} animeList The array of anime objects to save.
-         */
         function saveAnimeList(animeList) {
             localStorage.setItem('myAnimeList', JSON.stringify(animeList));
         }
-
-        /**
-         * Adds a new anime to the list and saves it.
-         */
-        function addAnime(event) {
-            event.preventDefault(); // Prevent page reload
-            const title = document.getElementById('animeTitle').value;
-            const link = document.getElementById('animeLink').value;
-            
-            const animeList = getAnimeList();
-            animeList.push({ title, link });
-            saveAnimeList(animeList);
-            
-            showListView(); // Switch back to the list view
-        }
         
-        /**
-         * Deletes an anime from the list by its index.
-         */
+        function handleAddLink(event) {
+             event.preventDefault();
+             const title = document.getElementById('linkTitle').value;
+             const link = document.getElementById('linkUrl').value;
+             
+             const animeList = getAnimeList();
+             animeList.push({ title, link });
+             saveAnimeList(animeList);
+             
+             document.getElementById('addLinkForm').reset();
+             displayAnimeList(); 
+        }
+
         function deleteAnime(index) {
-            if (confirm('Are you sure you want to delete this item?')) {
-                const animeList = getAnimeList();
-                animeList.splice(index, 1); // Remove the item at the specified index
+            if (confirm('Are you sure you want to delete this item from your personal list?')) {
+                let animeList = getAnimeList();
+                animeList.splice(index, 1);
                 saveAnimeList(animeList);
-                displayAnimeList(); // Refresh the list view
+                displayAnimeList();
             }
         }
+        
+        function clearPersonalList() {
+            if (confirm('WARNING: Are you sure you want to clear ALL items from your personal watch list? This cannot be undone.')) {
+                saveAnimeList([]);
+                displayAnimeList();
+            }
+        }
+        window.clearPersonalList = clearPersonalList;
 
-        /**
-         * Renders the anime list to the page.
-         */
         function displayAnimeList() {
+            const container = document.getElementById('animeListContainer');
             const animeList = getAnimeList();
-            animeListContainer.innerHTML = ''; // Clear current list
+            container.innerHTML = ''; 
+
+            document.getElementById('listHeader').textContent = `My Current Watch List (${animeList.length} Titles)`;
 
             if (animeList.length === 0) {
-                animeListContainer.innerHTML = '<p style="text-align: center;">Your list is empty! Add some anime.</p>';
+                container.innerHTML = '<p style="text-align: center; color: var(--text-dim); padding: 10px;">Your list is empty. Add a new item above!</p>';
                 return;
             }
 
             animeList.forEach((anime, index) => {
-                // Create the main container div
                 const animeDiv = document.createElement('div');
                 animeDiv.className = 'anime-item';
+                
+                // Uses loadVideoPlayer for the link click
+                const linkTag = anime.link ? 
+                    `<a onclick="loadVideoPlayer('${anime.title.replace(/'/g, "\\'")}', '${anime.link.replace(/'/g, "\\'")}')" title="Play Link">${anime.title}</a>` :
+                    `<span>${anime.title} (No Link)</span>`;
 
-                // Create the link element
-                const animeLink = document.createElement('a');
-                animeLink.textContent = anime.title;
-                animeLink.href = anime.link;
-                animeLink.target = '_blank'; // Open in a new tab
+                animeDiv.innerHTML = `
+                    ${linkTag}
+                    <button class="button button-danger delete-btn" style="padding: 5px 10px; font-size: 0.8em;" onclick="deleteAnime(${index})">Delete</button>
+                `;
+                container.appendChild(animeDiv);
+            });
+        }
 
-                // Create the delete button
-                const deleteButton = document.createElement('button');
-                deleteButton.textContent = 'Delete';
-                deleteButton.className = 'delete-btn';
-                deleteButton.onclick = () => deleteAnime(index); // Pass the index to the delete function
+        // === DATA HANDLERS (Anime Requests - Public Requests) ===
+        function getAnimeRequests() {
+            return JSON.parse(localStorage.getItem('animeRequests')) || [];
+        }
 
-                // Append elements to the container
-                animeDiv.appendChild(animeLink);
-                animeDiv.appendChild(deleteButton);
-                animeListContainer.appendChild(animeDiv);
+        function saveAnimeRequests(requests) {
+            localStorage.setItem('animeRequests', JSON.stringify(requests));
+        }
+
+        function handleRequestSubmit(event) {
+            event.preventDefault();
+            const name = document.getElementById('requesterName').value || 'Anonymous'; 
+            const title = document.getElementById('requestedTitle').value;
+
+            const requests = getAnimeRequests();
+            requests.push({ name, title, status: 'New' }); 
+            saveAnimeRequests(requests);
+
+            document.getElementById('requestAnimeForm').reset();
+            displayRequests();
+        }
+
+        function updateRequestStatus(index, newStatus) {
+            let requests = getAnimeRequests();
+            if (index < 0 || index >= requests.length) return; 
+
+            requests[index].status = newStatus;
+            saveAnimeRequests(requests);
+            displayRequests(); 
+        }
+        
+        function deleteRequest(index) {
+            if (confirm('Are you sure you want to permanently delete this request?')) {
+                let requests = getAnimeRequests();
+                requests.splice(index, 1);
+                saveAnimeRequests(requests);
+                displayRequests();
+            }
+        }
+
+        function displayRequests() {
+            const tableBody = document.getElementById('requestTableBody');
+            const requests = getAnimeRequests();
+            tableBody.innerHTML = '';
+
+            if (requests.length === 0) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = 4;
+                td.textContent = 'No public requests yet.';
+                td.style.textAlign = 'center';
+                tr.appendChild(td);
+                tableBody.appendChild(tr);
+                return;
+            }
+
+            requests.forEach((req, index) => {
+                const tr = document.createElement('tr');
+                
+                const statusTag = `<span class="status-tag ${req.status.replace(/\s/g, '-')}" >${req.status}</span>`;
+                
+                const actionButtons = `
+                    <div class="action-group">
+                        <button class="action-button btn-check" onclick="updateRequestStatus(${index}, 'Checking')">Check</button>
+                        <button class="action-button btn-hold" onclick="updateRequestStatus(${index}, 'On-Hold')">Hold</button>
+                        <button class="action-button btn-complete" onclick="updateRequestStatus(${index}, 'Completed')">Done</button>
+                        <button class="action-button btn-delete" onclick="deleteRequest(${index})">X</button>
+                    </div>
+                `;
+
+                tr.innerHTML = `
+                    <td>${req.title}</td>
+                    <td>${req.name}</td>
+                    <td>${statusTag}</td>
+                    <td>${actionButtons}</td>
+                `;
+                tableBody.appendChild(tr);
             });
         }
 
         // === INITIALIZATION ===
-        
-        // Add event listener to the form
-        addAnimeForm.addEventListener('submit', addAnime);
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('requestAnimeForm').addEventListener('submit', handleRequestSubmit);
+            document.getElementById('addLinkForm').addEventListener('submit', handleAddLink);
+            
+            // Expose admin functions to the window for button clicks
+            window.deleteAnime = deleteAnime;
+            window.updateRequestStatus = updateRequestStatus;
+            window.deleteRequest = deleteRequest;
 
-        // Show the main list view when the page first loads
-        document.addEventListener('DOMContentLoaded', showListView);
+            showView('dashboardView');
+        });
     </script>
 
 </body>
