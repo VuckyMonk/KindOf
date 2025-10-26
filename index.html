@@ -50,74 +50,98 @@
 <body class="bg-gray-900 text-white min-h-screen p-4 sm:p-8 font-sans">
 
     <div class="max-w-3xl mx-auto">
-        <header class="text-center mb-10">
+        <header class="text-center mb-6">
             <h1 class="text-5xl sm:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-600">
                 Watch List
             </h1>
             <p class="mt-2 text-lg text-gray-400">Never lose track of your next adventure.</p>
         </header>
 
-        <!-- Input Form (Personal List) -->
-        <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl mb-8 border border-gray-700">
-            <h2 class="text-xl font-semibold mb-4">Add New Item (Personal)</h2>
-            <div class="flex flex-col md:flex-row gap-3">
-                <!-- Adjusted md:width for better layout -->
-                <input type="text" id="itemInput" placeholder="Enter item title (e.g., Chainsaw Man)"
-                       class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-accent focus:border-accent border-transparent transition duration-200 md:w-2/5 w-full">
-                <input type="url" id="urlInput" placeholder="Paste watch link (Optional)"
-                       class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-accent focus:border-accent border-transparent transition duration-200 md:w-2/5 w-full">
-                <button id="addItemBtn"
-                        class="bg-accent hover:bg-accent-hover text-white font-bold py-3 px-6 rounded-lg transition duration-300 shadow-md transform hover:scale-[1.02] active:scale-[0.98] md:w-1/5 w-full">
-                    Add to List
-                </button>
-            </div>
-            <p id="messageBox" class="text-sm mt-3 h-5 text-red-400"></p>
-        </div>
-
-        <!-- Personal Watch List -->
-        <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl border border-gray-700 mb-8">
-            <h2 class="text-xl font-semibold mb-4 border-b border-gray-700 pb-3">My Current Watch List (<span id="totalCount">0</span> Titles)</h2>
-            <ul id="itemList" class="space-y-3 max-h-96 overflow-y-auto pr-2">
-                <!-- Personal list items will be injected here by JavaScript -->
-            </ul>
-            <button id="clearAllBtn"
-                    class="mt-6 w-full py-2 text-sm text-red-400 border border-red-400 rounded-lg hover:bg-red-900/50 transition duration-300">
-                Clear All Personal List Items
+        <!-- NEW: Navigation Tabs -->
+        <nav class="flex justify-center mb-8 bg-secondary-dark rounded-xl p-2 shadow-xl border border-gray-700">
+            <button id="listViewBtn" onclick="switchView('list')" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg transition duration-200 text-white bg-accent hover:bg-accent-hover active-view">
+                Watch Lists
             </button>
-        </div>
+            <button id="linksViewBtn" onclick="switchView('links')" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg transition duration-200 text-gray-400 hover:bg-gray-700">
+                Video Links
+            </button>
+        </nav>
 
-        <!-- Request & Suggestion Box -->
-        <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl border border-gray-700">
-            <h2 class="text-xl font-semibold mb-4 border-b border-gray-700 pb-3 text-yellow-300">Public Watch Requests</h2>
-
-            <!-- Request Input Form (NO URL FIELD HERE) -->
-            <div class="flex flex-col sm:flex-row gap-3 mb-6">
-                <input type="text" id="requestInput" placeholder="Item to request (e.g., One Piece)"
-                       class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 border-transparent transition duration-200 sm:w-1/2 w-full">
-                <input type="text" id="suggesterInput" placeholder="Your Name (Optional)"
-                       class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 border-transparent transition duration-200 sm:w-1/4 w-full">
-                <button id="addRequestBtn"
-                        class="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-6 rounded-lg transition duration-300 shadow-md transform hover:scale-[1.02] active:scale-[0.98] sm:w-1/4 w-full">
-                    Suggest Item
-                </button>
-            </div>
-
-            <!-- Request List Header (Table Header) -->
-            <div class="grid grid-cols-12 text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-600 pb-2 mb-3">
-                <span class="col-span-6 md:col-span-7">Title</span>
-                <span class="col-span-4 md:col-span-3">Suggested By</span>
-                <span class="col-span-2 md:col-span-2 text-right">Action/Status</span>
-            </div>
-
-            <!-- Request List -->
-            <div id="requestList" class="space-y-2 max-h-80 overflow-y-auto pr-2">
-                <!-- Suggested items will be injected here -->
-            </div>
+        <!-- Main Watch List Manager (List View) -->
+        <div id="listView">
             
-            <button id="clearRequestsBtn"
-                    class="mt-6 w-full py-2 text-sm text-gray-400 border border-gray-400 rounded-lg hover:bg-gray-700/50 transition duration-300">
-                Clear All Requests
-            </button>
+            <!-- Input Form (Personal List) -->
+            <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl mb-8 border border-gray-700">
+                <h2 class="text-xl font-semibold mb-4">Add New Item (Personal)</h2>
+                <div class="flex flex-col md:flex-row gap-3">
+                    <!-- Adjusted md:width for better layout -->
+                    <input type="text" id="itemInput" placeholder="Enter item title (e.g., Chainsaw Man)"
+                           class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-accent focus:border-accent border-transparent transition duration-200 md:w-2/5 w-full">
+                    <input type="url" id="urlInput" placeholder="Paste watch link (Optional)"
+                           class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-accent focus:border-accent border-transparent transition duration-200 md:w-2/5 w-full">
+                    <button id="addItemBtn"
+                            class="bg-accent hover:bg-accent-hover text-white font-bold py-3 px-6 rounded-lg transition duration-300 shadow-md transform hover:scale-[1.02] active:scale-[0.98] md:w-1/5 w-full">
+                        Add to List
+                    </button>
+                </div>
+                <p id="messageBox" class="text-sm mt-3 h-5 text-red-400"></p>
+            </div>
+
+            <!-- Personal Watch List -->
+            <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl border border-gray-700 mb-8">
+                <h2 class="text-xl font-semibold mb-4 border-b border-gray-700 pb-3">My Current Watch List (<span id="totalCount">0</span> Titles)</h2>
+                <ul id="itemList" class="space-y-3 max-h-96 overflow-y-auto pr-2">
+                    <!-- Personal list items will be injected here by JavaScript -->
+                </ul>
+                <button id="clearAllBtn"
+                        class="mt-6 w-full py-2 text-sm text-red-400 border border-red-400 rounded-lg hover:bg-red-900/50 transition duration-300">
+                    Clear All Personal List Items
+                </button>
+            </div>
+
+            <!-- Request & Suggestion Box -->
+            <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl border border-gray-700">
+                <h2 class="text-xl font-semibold mb-4 border-b border-gray-700 pb-3 text-yellow-300">Public Watch Requests</h2>
+
+                <!-- Request Input Form (NO URL FIELD HERE) -->
+                <div class="flex flex-col sm:flex-row gap-3 mb-6">
+                    <input type="text" id="requestInput" placeholder="Item to request (e.g., One Piece)"
+                           class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 border-transparent transition duration-200 sm:w-1/2 w-full">
+                    <input type="text" id="suggesterInput" placeholder="Your Name (Optional)"
+                           class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 border-transparent transition duration-200 sm:w-1/4 w-full">
+                    <button id="addRequestBtn"
+                            class="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-6 rounded-lg transition duration-300 shadow-md transform hover:scale-[1.02] active:scale-[0.98] sm:w-1/4 w-full">
+                        Suggest Item
+                    </button>
+                </div>
+
+                <!-- Request List Header (Table Header) -->
+                <div class="grid grid-cols-12 text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-600 pb-2 mb-3">
+                    <span class="col-span-6 md:col-span-7">Title</span>
+                    <span class="col-span-4 md:col-span-3">Suggested By</span>
+                    <span class="col-span-2 md:col-span-2 text-right">Action/Status</span>
+                </div>
+
+                <!-- Request List -->
+                <div id="requestList" class="space-y-2 max-h-80 overflow-y-auto pr-2">
+                    <!-- Suggested items will be injected here -->
+                </div>
+                
+                <button id="clearRequestsBtn"
+                        class="mt-6 w-full py-2 text-sm text-gray-400 border border-gray-400 rounded-lg hover:bg-gray-700/50 transition duration-300">
+                    Clear All Requests
+                </button>
+            </div>
+        </div>
+
+        <!-- NEW: Video Links View -->
+        <div id="videoLinksView" class="hidden">
+            <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl border border-gray-700">
+                <h2 class="text-xl font-semibold mb-4 border-b border-gray-700 pb-3 text-cyan-300">My Saved Watch Links</h2>
+                <div id="linksContainer" class="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                    <!-- Video links will be injected here -->
+                </div>
+            </div>
         </div>
     </div>
 
@@ -131,9 +155,7 @@
         const clearAllBtn = document.getElementById('clearAllBtn');
         const messageBox = document.getElementById('messageBox');
         const totalCount = document.getElementById('totalCount');
-
-        let list = [];
-
+        
         // --- Request List Constants ---
         const STORAGE_KEY_REQUESTS = 'watchRequests'; 
         const requestInput = document.getElementById('requestInput');
@@ -142,7 +164,16 @@
         const addRequestBtn = document.getElementById('addRequestBtn');
         const clearRequestsBtn = document.getElementById('clearRequestsBtn');
 
+        // --- NEW CONSTANTS FOR VIEW SWITCHING ---
+        const listView = document.getElementById('listView');
+        const videoLinksView = document.getElementById('videoLinksView');
+        const listViewBtn = document.getElementById('listViewBtn');
+        const linksViewBtn = document.getElementById('linksViewBtn');
+        const linksContainer = document.getElementById('linksContainer');
+
+        let list = [];
         let requests = [];
+        let currentView = 'list'; // New state variable
 
         // --- General Utility Functions ---
 
@@ -152,6 +183,31 @@
             setTimeout(() => {
                 messageBox.textContent = '';
             }, 3000);
+        }
+
+        // --- NEW VIEW SWITCHING LOGIC ---
+        function switchView(viewName) {
+            currentView = viewName;
+
+            // Toggle views
+            if (currentView === 'list') {
+                listView.classList.remove('hidden');
+                videoLinksView.classList.add('hidden');
+                listViewBtn.classList.add('bg-accent', 'active-view', 'text-white');
+                listViewBtn.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                linksViewBtn.classList.remove('bg-accent', 'active-view', 'text-white');
+                linksViewBtn.classList.add('text-gray-400', 'hover:bg-gray-700');
+                // Ensure the list is current when switching back
+                renderList(); 
+            } else { // 'links'
+                listView.classList.add('hidden');
+                videoLinksView.classList.remove('hidden');
+                linksViewBtn.classList.add('bg-accent', 'active-view', 'text-white');
+                linksViewBtn.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                listViewBtn.classList.remove('bg-accent', 'active-view', 'text-white');
+                listViewBtn.classList.add('text-gray-400', 'hover:bg-gray-700');
+                renderVideoLinks();
+            }
         }
 
         // --- Personal List Logic ---
@@ -176,12 +232,13 @@
                     url: item.url || '' 
                 }));
 
-                renderList();
+                // Call renderList only after initial load, switchView handles subsequent calls
+                // renderList(); // Removed to let switchView handle the initial render based on default view
             } catch (e) {
                 console.error("Could not load personal list from localStorage:", e);
                 list = []; 
                 displayMessage("Error loading previous personal list data.", true);
-                renderList();
+                // renderList(); // Removed to let switchView handle the initial render based on default view
             }
         }
 
@@ -269,6 +326,11 @@
             
             // Re-render requests to update their status when the personal list changes
             renderRequests();
+
+            // Re-render video links if that view is active, so they stay updated
+            if (currentView === 'links') {
+                renderVideoLinks();
+            }
         }
 
         function addItem() { 
@@ -349,12 +411,12 @@
             try {
                 const storedRequests = localStorage.getItem(STORAGE_KEY_REQUESTS);
                 requests = storedRequests ? JSON.parse(storedRequests) : [];
-                renderRequests();
+                // renderRequests(); // Removed to let switchView handle the initial render based on default view
             } catch (e) {
                 console.error("Could not load requests from localStorage:", e);
                 requests = []; 
                 displayMessage("Error loading request list data.", true);
-                renderRequests();
+                // renderRequests(); // Removed to let switchView handle the initial render based on default view
             }
         }
 
@@ -457,7 +519,7 @@
                     // Add to personal list (Always with an empty URL here, as desired)
                     list.unshift({ title: request.title, watched: false, url: '' });
                     saveList();
-                    renderList(); // Re-render personal list (also triggers renderRequests)
+                    renderList(); // Re-render personal list (also triggers renderRequests and renderVideoLinks)
                     displayMessage(`'${request.title}' moved to your personal list.`);
                 }
                 
@@ -480,6 +542,44 @@
                 renderRequests();
                 displayMessage("Request list cleared.");
             }
+        }
+        
+        // --- NEW VIDEO LINKS RENDERING ---
+
+        function renderVideoLinks() {
+            linksContainer.innerHTML = '';
+            
+            const links = list.filter(item => item.url.trim() !== '');
+
+            if (links.length === 0) {
+                linksContainer.innerHTML = `<div class="text-center text-gray-500 py-6">No saved links yet. Add items with a link in the 'Watch Lists' tab!</div>`;
+                return;
+            }
+
+            links.forEach(item => {
+                const safeUrl = item.url.startsWith('http://') || item.url.startsWith('https://') 
+                    ? item.url 
+                    : 'https://' + item.url;
+                const displayUrl = item.url.replace(/^(https?:\/\/(www\.)?)/, '').split('/')[0];
+
+                const linkElement = document.createElement('div');
+                linkElement.className = 'bg-gray-800 p-4 rounded-lg shadow-md flex justify-between items-center transition duration-200 hover:bg-gray-700/80 border border-gray-700';
+
+                linkElement.innerHTML = `
+                    <div class="min-w-0 mr-4">
+                        <p class="text-lg font-bold text-white truncate">${item.title}</p>
+                        <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" 
+                           class="text-sm text-cyan-400 hover:text-cyan-300 truncate font-mono block mt-1">
+                            ${displayUrl}
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                        </a>
+                    </div>
+                `;
+                
+                linksContainer.appendChild(linkElement);
+            });
         }
 
 
@@ -518,6 +618,9 @@
         window.onload = () => {
             loadList();
             loadRequests();
+            // This is the only place we call switchView initially, 
+            // which in turn calls renderList/renderRequests based on default 'list' view.
+            switchView('list'); 
         }
 
     </script>
