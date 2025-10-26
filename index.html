@@ -48,10 +48,10 @@
 
         <!-- Navigation Tabs -->
         <nav class="flex justify-center mb-8 bg-secondary-dark rounded-xl p-2 shadow-xl border border-gray-700">
-            <button id="listViewBtn" onclick="switchView('list')" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg transition duration-200 text-white bg-accent active-view">
+            <button id="listViewBtn" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg transition duration-200 text-white bg-accent active-view">
                 Watch Lists
             </button>
-            <button id="linksViewBtn" onclick="switchView('links')" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg transition duration-200 text-gray-400 hover:bg-gray-700">
+            <button id="linksViewBtn" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg transition duration-200 text-gray-400 hover:bg-gray-700">
                 Video Links
             </button>
         </nav>
@@ -664,6 +664,10 @@
         window.onload = () => {
             initFirebase();
             
+            // Navigation Listeners (FIX: Removed inline onclick and attached listeners here)
+            listViewBtn.addEventListener('click', () => switchView('list'));
+            linksViewBtn.addEventListener('click', () => switchView('links'));
+
             // Personal List Listeners
             addItemBtn.addEventListener('click', addItem); 
             itemInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { addItem(); } });
