@@ -1,742 +1,250 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-    
-// Ensure debug logging is enabled for better development experience
-setLogLevel('Debug');
-
-// --- Global Variables (Provided by Canvas Environment) ---
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-let db = null;
-let auth = null;
-let currentUserId = null;
-let personalList = [];
-let publicRequests = [];
-let isAuthReady = false;
-let currentView = 'list';
-let currentlyPlaying = null; // Stores the item object when video is playing
-
-// --- DOM Elements ---
-const itemInput = document.getElementById('itemInput');
-const urlInput = document.getElementById('urlInput');
-const itemListUl = document.getElementById('itemList');
-const addItemBtn = document.getElementById('addItemBtn');
-const clearAllBtn = document.getElementById('clearAllBtn');
-const messageBox = document.getElementById('messageBox');
-const totalCount = document.getElementById('totalCount');
-const requestInput = document.getElementById('requestInput');
-const suggesterInput = document.getElementById('suggesterInput');
-const requestListUl = document.getElementById('requestList');
-const addRequestBtn = document.getElementById('addRequestBtn');
-    
-const loadingIndicator = document.getElementById('loadingIndicator');
-    
-// View Containers
-const listView = document.getElementById('listView');
-const videoLinksView = document.getElementById('videoLinksView');
-const videoPlayerView = document.getElementById('videoPlayerView');
-
-// Nav Buttons
-const listViewBtn = document.getElementById('listViewBtn');
-const linksViewBtn = document.getElementById('linksViewBtn');
-    
-const linksContainer = document.getElementById('linksContainer');
-
-// --- Firebase Path Helpers ---
-function getPersonalListCollection() {
-    if (!currentUserId) throw new Error("User not authenticated ($currentUserId is null). List item cannot be added.");
-    // Path: /artifacts/{appId}/users/{userId}/personal_list
-    return collection(db, 'artifacts', appId, 'users', currentUserId, 'personal_list');
-}
-
-function getPublicRequestsCollection() {
-    // Path: /artifacts/{appId}/public/data/watch_requests
-    return collection(db, 'artifacts', appId, 'public', 'data', 'watch_requests');
-}
-
-// --- Utility Functions ---
-
-function displayMessage(text, isError = false) {
-    messageBox.textContent = text;
-    messageBox.className = isError ? 'text-sm mt-3 h-5 text-red-400' : 'text-sm mt-3 h-5 text-green-400';
-    setTimeout(() => {
-        messageBox.textContent = '';
-    }, 3000);
-}
-    
-function sanitizeUrl(url) {
-    if (!url) return '';
-    const trimmedUrl = url.trim();
-    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
-        return trimmedUrl;
-    }
-    // Simple default to https for user convenience
-    return 'https://' + trimmedUrl;
-}
-    
-// Function to extract YouTube video ID
-function extractYouTubeId(url) {
-    // Regex to match various YouTube URL formats (watch, embed, shortener, etc.)
-    const regex = /(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-    const match = url.match(regex);
-    return (match && match[1]) ? match[1] : null;
-}
-
-// --- Interactive Element Toggle Handler ---
-function updateInteractiveElements(isEnabled) {
-    // Personal List Inputs and Buttons
-    itemInput.disabled = !isEnabled;
-    urlInput.disabled = !isEnabled;
-    addItemBtn.disabled = !isEnabled;
-    clearAllBtn.disabled = !isEnabled;
-        
-    // Public Request Inputs and Buttons
-    requestInput.disabled = !isEnabled;
-    suggesterInput.disabled = !isEnabled;
-    addRequestBtn.disabled = !isEnabled;
-        
-    // Add/Remove visual cues
-    const items = [addItemBtn, addRequestBtn, itemInput, urlInput, requestInput, suggesterInput, clearAllBtn];
-    items.forEach(el => {
-        el.classList.toggle('hover:bg-accent-hover', isEnabled && el.id === 'addItemBtn');
-        el.classList.toggle('hover:bg-yellow-600', isEnabled && el.id === 'addRequestBtn');
-        el.classList.toggle('opacity-50', !isEnabled);
-        el.classList.toggle('cursor-not-allowed', !isEnabled);
-    });
-}
-// --- View Switching Logic ---
-
-window.switchView = function(viewName) {
-    currentView = viewName;
-
-    // Toggle views visibility
-    listView.classList.toggle('hidden', currentView !== 'list');
-    videoLinksView.classList.toggle('hidden', currentView !== 'links');
-    videoPlayerView.classList.toggle('hidden', currentView !== 'player');
-
-    // Hide nav when in player view
-    document.querySelector('nav').classList.toggle('hidden', currentView === 'player');
-        
-    // Update button styles
-    const activeClasses = ['bg-accent', 'active-view', 'text-white', 'hover:bg-accent-hover'];
-    const inactiveClasses = ['text-gray-400', 'hover:bg-gray-700'];
-
-    // Reset both buttons
-    listViewBtn.classList.remove(...activeClasses);
-    listViewBtn.classList.add(...inactiveClasses);
-    linksViewBtn.classList.remove(...activeClasses);
-    linksViewBtn.classList.add(...inactiveClasses);
-
-    // Apply active styles
-    if (currentView === 'list') {
-        listViewBtn.classList.add(...activeClasses);
-        listViewBtn.classList.remove(...inactiveClasses);
-    } else if (currentView === 'links') {
-        linksViewBtn.classList.add(...activeClasses);
-        linksViewBtn.classList.remove(...inactiveClasses);
-        renderVideoLinks(); // Ensure links are rendered when switching to this view
-    }
-    // No style update needed for 'player' view as the nav is hidden
-}
-
-// --- Personal List CRUD and Rendering ---
-
-function isItemInPersonalList(title) {
-    return personalList.some(item => item.title.toLowerCase() === title.toLowerCase());
-}
-    
-function createItemElement(item) { 
-    const li = document.createElement('li');
-    li.className = `flex items-center justify-between p-3 rounded-lg transition duration-200 shadow-md ${item.watched ? 'watched' : 'bg-gray-800 hover:bg-gray-700/80'}`;
-
-    // Main Content container (Title + URL)
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'flex flex-col flex-grow mr-4 min-w-0';
-
-    // Item Title
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'item-title text-base sm:text-lg truncate'; 
-    titleSpan.textContent = item.title;
-    contentDiv.appendChild(titleSpan);
-
-    // Item URL (Link)
-    if (item.url) {
-        const urlAnchor = document.createElement('a');
-        const safeUrl = sanitizeUrl(item.url);
-        
-        urlAnchor.href = safeUrl;
-        urlAnchor.target = '_blank';
-        urlAnchor.rel = 'noopener noreferrer';
-        const displayUrl = safeUrl.replace(/^(https?:\/\/(www\.)?)/, '').split('/')[0];
-
-        urlAnchor.className = 'text-xs text-purple-400 hover:text-purple-300 truncate font-mono';
-        urlAnchor.textContent = 'Link: ' + displayUrl;
-        contentDiv.appendChild(urlAnchor);
-    }
-
-    li.appendChild(contentDiv);
-
-    // Action Buttons Container
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'flex space-x-2 shrink-0';
-
-    // Watched Toggle Button
-    const toggleBtn = document.createElement('button');
-    toggleBtn.innerHTML = item.watched
-        ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>`
-        : `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 hover:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>`;
-    toggleBtn.title = item.watched ? 'Mark as Unwatched' : 'Mark as Watched';
-    toggleBtn.className = 'p-1 rounded-full transition duration-150';
-    toggleBtn.onclick = () => toggleWatched(item.id, item.title, !item.watched);
-    actionsDiv.appendChild(toggleBtn);
-
-    // Delete Button
-    const deleteBtn = document.createElement('button');
-    deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
-    deleteBtn.title = 'Delete';
-    deleteBtn.className = 'p-1 rounded-full transition duration-150';
-    deleteBtn.onclick = () => deleteItem(item.id, item.title); 
-    actionsDiv.appendChild(deleteBtn);
-
-    li.appendChild(actionsDiv);
-    return li;
-}
-
-function renderList() {
-    itemListUl.innerHTML = '';
-    totalCount.textContent = personalList.length;
-
-    // Sort list: unwatched first, then watched
-    const sortedList = [...personalList].sort((a, b) => {
-        if (a.watched === b.watched) return 0;
-        if (a.watched) return 1; 
-        return -1; 
-    });
-
-    if (sortedList.length === 0) {
-        itemListUl.innerHTML = `<li class="text-center text-gray-500 py-6">Your watch list is empty! Add your first item above.</li>`;
-        // Only hide the clear button if the list is truly empty
-        clearAllBtn.classList.add('hidden');
-    } else {
-        // Show the clear button when items exist
-        clearAllBtn.classList.remove('hidden');
-        sortedList.forEach(item => {
-            const element = createItemElement(item); 
-            itemListUl.appendChild(element); 
-        });
-    }
-    
-    // If the links view is active, update it (needed in case of a list change)
-    if (currentView === 'links') {
-        renderVideoLinks();
-    }
-}
-
-async function addItem() { 
-    if (!isAuthReady) { 
-        displayMessage("Database connection not ready. Please wait.", true); 
-        return; 
-    }
-    
-    const title = itemInput.value.trim(); 
-    const url = urlInput.value.trim(); 
-    
-    if (title === '') {
-        displayMessage("Item title cannot be empty.", true);
-        return;
-    }
-
-    const exists = personalList.some(item => item.title.toLowerCase() === title.toLowerCase());
-    if (exists) {
-        displayMessage(`'${title}' is already in your personal list.`, true);
-        return;
-    }
-
-    try {
-        // Ensure currentUserId is set before attempting to get collection reference
-        if (!currentUserId) {
-            throw new Error("User ID not available during addDoc call. Sign-in must have failed.");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Anime List</title>
+    <style>
+        /* General Styles */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            background-color: #f4f4f9; 
+            color: #333; 
+            margin: 0; 
+            padding: 20px;
+        }
+        .container { 
+            max-width: 800px; 
+            margin: auto; 
+            background: #ffffff; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
+        }
+        h1 { 
+            text-align: center; 
+            color: #4a4a88; 
+        }
+        button, .action-button {
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            color: white;
+            display: inline-block;
+            text-align: center;
         }
 
-        await addDoc(getPersonalListCollection(), {
-            title: title,
-            url: url,
-            watched: false,
-            createdAt: Date.now()
-        });
-        
-        itemInput.value = ''; 
-        urlInput.value = ''; 
-        displayMessage(`'${title}' added to personal list!`);
-    } catch (error) {
-        // CRITICAL: Log the full error object for better debugging
-        console.error("FIREBASE ERROR: Failed to add item. Check permissions/path:", error);
-        displayMessage("Failed to add item. Check browser console for details (FIREBASE ERROR).", true);
-    }
-}
-
-async function toggleWatched(docId, title, newWatchedStatus) {
-    if (!isAuthReady) return;
-    try {
-        const itemRef = doc(getPersonalListCollection(), docId);
-        await updateDoc(itemRef, { watched: newWatchedStatus });
-        displayMessage(newWatchedStatus ? `'${title}' marked as watched.` : `'${title}' marked as unwatched.`);
-    } catch (error) {
-        console.error("Error toggling watched status:", error);
-        displayMessage("Failed to update status. Check console.", true);
-    }
-}
-
-async function deleteItem(docId, title) { 
-    if (!isAuthReady) return;
-    try {
-        await deleteDoc(doc(getPersonalListCollection(), docId));
-        displayMessage(`'${title}' removed from your personal list.`);
-    } catch (error) {
-        console.error("Error deleting item:", error);
-        displayMessage("Failed to delete item. Check console.", true);
-    }
-}
-
-async function clearAll() {
-    if (!isAuthReady || personalList.length === 0) return;
-
-    const confirmation = prompt("To clear your entire personal list, please type 'DELETE ALL' to confirm. This action cannot be undone.");
-
-    if (confirmation === 'DELETE ALL') {
-        try {
-            const batch = writeBatch(db);
-            personalList.forEach(item => {
-                batch.delete(doc(getPersonalListCollection(), item.id));
-            });
-            await batch.commit();
-            displayMessage("Personal list cleared successfully.");
-        } catch (error) {
-            console.error("Error clearing all items:", error);
-            displayMessage("Failed to clear all items. Check console.", true);
+        /* List View Styles */
+        #listView .add-button {
+            display: block;
+            width: 200px;
+            margin: 20px auto;
+            background: #28a745;
         }
-    } else {
-        displayMessage("Clear operation cancelled or incorrect confirmation.", true);
-    }
-}
-
-// --- Public Requests CRUD and Rendering ---
-
-function createRequestElement(request) {
-    const div = document.createElement('div');
-    div.className = 'grid grid-cols-12 items-center bg-gray-800 hover:bg-gray-700/80 p-3 rounded-lg transition duration-200';
-
-    // Title
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'col-span-6 md:col-span-7 text-sm font-semibold truncate';
-    titleSpan.textContent = request.title;
-
-    // Suggester Name
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'col-span-4 md:col-span-3 text-xs text-gray-400 truncate';
-    nameSpan.textContent = request.suggestedBy || 'Anonymous';
-
-    // Action / Status Indicator
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'col-span-2 md:col-span-2 text-right flex justify-end space-x-2';
-    
-    const isListed = isItemInPersonalList(request.title); 
-
-    if (isListed) {
-        // Renders a green checkmark if it's already added to the personal list
-        const listedIcon = document.createElement('span');
-        listedIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-500 inline-block" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>`;
-        listedIcon.title = 'Already in My Watch List';
-        actionsDiv.appendChild(listedIcon);
-    } else {
-        // Renders the 'Add' button if it's not yet listed
-        const addToListBtn = document.createElement('button');
-        addToListBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 hover:text-accent inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>`;
-        addToListBtn.title = 'Add to My Watch List';
-        addToListBtn.className = 'p-1 rounded-full transition duration-150';
-        addToListBtn.onclick = () => moveRequestToPersonal(request.id, request.title);
-        actionsDiv.appendChild(addToListBtn);
-    }
-    
-    // Delete Button (visible for all)
-    const deleteBtn = document.createElement('button');
-    deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
-    deleteBtn.title = 'Delete Public Request';
-    deleteBtn.className = 'p-1 rounded-full transition duration-150';
-    deleteBtn.onclick = () => deleteRequest(request.id, request.title);
-    actionsDiv.appendChild(deleteBtn);
-
-
-    div.appendChild(titleSpan);
-    div.appendChild(nameSpan);
-    div.appendChild(actionsDiv);
-
-    return div;
-}
-
-function renderRequests() {
-    requestListUl.innerHTML = '';
-    
-    if (publicRequests.length === 0) {
-        requestListUl.innerHTML = `<div class="text-center text-gray-500 py-6">No public suggestions yet!</div>`;
-        return;
-    }
-    
-    // Sort by creation time (newest first)
-    const sortedRequests = [...publicRequests].sort((a, b) => b.createdAt - a.createdAt);
-
-    sortedRequests.forEach(request => {
-        const item = createRequestElement(request);
-        requestListUl.appendChild(item);
-    });
-}
-
-async function addRequest() {
-    if (!isAuthReady) { displayMessage("Database connection not ready. Please wait.", true); return; }
-    
-    const title = requestInput.value.trim();
-    const suggester = suggesterInput.value.trim() || 'Anonymous';
-
-    if (title === '') {
-        displayMessage("Request title cannot be empty.", true);
-        return;
-    }
-
-    // Client-side check for request duplicates
-    const exists = publicRequests.some(request => request.title.toLowerCase() === title.toLowerCase());
-    if (exists) {
-        displayMessage(`'${title}' has already been suggested.`, true);
-        return;
-    }
-    
-    try {
-        await addDoc(getPublicRequestsCollection(), {
-            title: title,
-            suggestedBy: suggester,
-            createdAt: Date.now()
-        });
-
-        requestInput.value = '';
-        suggesterInput.value = '';
-        displayMessage(`Suggestion '${title}' added!`);
-    } catch (error) {
-        console.error("Error adding request:", error);
-        displayMessage("Failed to add request. Check console.", true);
-    }
-}
-
-async function moveRequestToPersonal(requestId, title) {
-    if (!isAuthReady) return;
-    
-    const alreadyInPersonal = personalList.some(item => item.title.toLowerCase() === title.toLowerCase());
-
-    if (!alreadyInPersonal) {
-        try {
-            // 1. Add to personal list
-            await addDoc(getPersonalListCollection(), {
-                title: title,
-                url: '', // Default to empty URL when moving from request
-                watched: false,
-                createdAt: Date.now()
-            });
-            displayMessage(`'${title}' moved to your personal list.`);
-        } catch (error) {
-            console.error("Error adding to personal list from request:", error);
-            displayMessage("Failed to add to personal list. Check console.", true);
-            return;
+        #listView .add-button:hover {
+            background: #218838;
         }
-    } else {
-        displayMessage(`'${title}' is already in your personal list. Removing public request.`, true);
-    }
+        .anime-item { 
+            background: #eef; 
+            padding: 15px; 
+            margin-bottom: 10px; 
+            border-radius: 5px; 
+            border-left: 5px solid #6677cc; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .anime-item a { 
+            text-decoration: none; 
+            font-weight: bold; 
+            font-size: 1.2em; 
+            color: #333; 
+        }
+        .anime-item a:hover { 
+            color: #4a4a88; 
+        }
+        .anime-item .delete-btn {
+            background-color: #dc3545;
+            color: white;
+            padding: 5px 10px;
+            font-size: 0.8em;
+            border-radius: 4px;
+        }
+        .anime-item .delete-btn:hover {
+            background-color: #c82333;
+        }
 
-    // 2. Remove from public request list
-    try {
-        await deleteDoc(doc(getPublicRequestsCollection(), requestId));
-    } catch (error) {
-        console.error("Error deleting request after move:", error);
-        displayMessage(`Failed to remove request '${title}'. Check console.`, true);
-    }
-}
+        /* Add View Styles */
+        #addView {
+            max-width: 600px;
+        }
+        #addView form { 
+            display: flex; 
+            flex-direction: column; 
+        }
+        #addView label { 
+            margin-bottom: 5px; 
+            font-weight: bold; 
+        }
+        #addView input { 
+            padding: 10px; 
+            margin-bottom: 15px; 
+            border: 1px solid #ccc; 
+            border-radius: 4px; 
+            font-size: 1em; 
+        }
+        #addView .save-button { 
+            background: #007bff; 
+        }
+        #addView .save-button:hover { 
+            background: #0056b3; 
+        }
+        #addView .back-button {
+            background-color: #6c757d;
+            margin-top: 10px;
+        }
+        #addView .back-button:hover {
+            background-color: #5a6268;
+        }
 
-async function deleteRequest(requestId, title) {
-    if (!isAuthReady) return;
-    const confirmation = confirm(`Are you sure you want to delete the public request: '${title}'?`);
-    if (!confirmation) return;
+    </style>
+</head>
+<body>
 
-    try {
-        await deleteDoc(doc(getPublicRequestsCollection(), requestId));
-        displayMessage(`Public request for '${title}' deleted.`);
-    } catch (error) {
-        console.error("Error deleting public request:", error);
-        displayMessage("Failed to delete public request. Check console.", true);
-    }
-}
-
-// --- Video Links View Rendering and Player Logic ---
-
-function createLinkElement(item) {
-    const div = document.createElement('div');
-    // Styling a bit different for the links view for clarity
-    div.className = 'grid grid-cols-12 items-center bg-gray-800 hover:bg-gray-700/80 p-3 rounded-lg transition duration-200';
-
-    // Title
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'col-span-5 text-sm font-semibold truncate';
-    titleSpan.textContent = item.title;
-
-    // Link Display
-    const linkSpan = document.createElement('span');
-    linkSpan.className = 'col-span-4 text-xs text-purple-400 hover:text-purple-300 truncate font-mono';
-    const safeUrl = sanitizeUrl(item.url);
-    const displayUrl = safeUrl.replace(/^(https?:\/\/(www\.)?)/, '').split('/')[0];
-    linkSpan.textContent = displayUrl;
-
-    // Actions
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'col-span-3 text-right flex justify-end space-x-2';
-
-    // Play Button (only if it's a YouTube link)
-    const youtubeId = extractYouTubeId(safeUrl);
-    if (youtubeId) {
-        const playBtn = document.createElement('button');
-        playBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-cyan-400 hover:text-cyan-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>`;
-        playBtn.title = 'Play Video in App';
-        playBtn.onclick = () => renderPlayerView(item);
-        actionsDiv.appendChild(playBtn);
-    }
-
-    // External Link Button
-    const externalLink = document.createElement('a');
-    externalLink.href = safeUrl;
-    externalLink.target = '_blank';
-    externalLink.rel = 'noopener noreferrer';
-    externalLink.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 hover:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>`;
-    externalLink.title = 'Open Link Externally';
-    externalLink.className = 'p-1 rounded-full transition duration-150';
-    actionsDiv.appendChild(externalLink);
-
-
-    div.appendChild(titleSpan);
-    div.appendChild(linkSpan);
-    div.appendChild(actionsDiv);
-
-    return div;
-}
-
-function renderVideoLinks() {
-    linksContainer.innerHTML = '';
-    
-    // Only show items that have a URL set
-    const linksOnly = personalList.filter(item => item.url && item.url.trim() !== '');
-
-    if (linksOnly.length === 0) {
-        linksContainer.innerHTML = `<div class="text-center text-gray-500 py-6">None of your list items have a saved link. Add a link in the "Watch Lists" view to see it here!</div>`;
-        return;
-    }
-
-    linksOnly.forEach(item => {
-        const element = createLinkElement(item);
-        linksContainer.appendChild(element);
-    });
-}
-
-window.renderPlayerView = function(item) {
-    if (!item.url) return; 
-
-    currentlyPlaying = item;
-    const youtubeId = extractYouTubeId(item.url);
-    let playerContent = '';
-    
-    // Header
-    playerContent += `
-        <div class="flex justify-between items-center mb-4">
-            <h2 class="text-2xl font-bold truncate text-cyan-300" title="${item.title}">
-                Watching: ${item.title}
-            </h2>
-            <button onclick="window.closePlayerView()" class="text-gray-400 hover:text-white transition duration-200">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-            </button>
-        </div>
-    `;
-
-    if (youtubeId) {
-        // YouTube Embed
-        playerContent += `
-            <div class="video-container">
-                <iframe 
-                    src="https://www.youtube.com/embed/${youtubeId}?autoplay=1" 
-                    frameborder="0" 
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                    allowfullscreen>
-                </iframe>
+    <section id="listView" class="container">
+        <h1>My Anime Watch List</h1>
+        <button class="add-button" onclick="showAddView()">Add New Anime</button>
+        <div id="animeListContainer">
             </div>
-            <p class="text-sm text-gray-400 mt-3 text-center">Video provided by YouTube.</p>
-        `;
-    } else {
-        // Generic Link Message
-        playerContent += `
-            <div class="text-center p-12 bg-gray-700 rounded-xl">
-                <p class="text-xl text-yellow-400 mb-4">Cannot embed this link.</p>
-                <p class="text-gray-300">This URL is not a recognized YouTube link, so it cannot be played directly within the app. Try opening it externally.</p>
-                <a href="${sanitizeUrl(item.url)}" target="_blank" rel="noopener noreferrer" class="mt-4 inline-block bg-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-accent-hover transition duration-300">
-                    Open Link Externally
-                </a>
-            </div>
-        `;
-    }
+    </section>
 
-    videoPlayerView.innerHTML = playerContent;
-    window.switchView('player');
-}
+    <section id="addView" class="container" style="display: none;">
+        <h1>Add a New Anime</h1>
+        <form id="addAnimeForm">
+            <label for="animeTitle">Anime Title:</label>
+            <input type="text" id="animeTitle" required>
+            
+            <label for="animeLink">Watch Link:</label>
+            <input type="url" id="animeLink" placeholder="https://example.com" required>
 
-window.closePlayerView = function() {
-    currentlyPlaying = null;
-    videoPlayerView.innerHTML = ''; // Clear the player content
-    window.switchView('links'); // Go back to the links list view
-}
+            <button type="submit" class="save-button">Save to List</button>
+        </form>
+        <button class="back-button" onclick="showListView()">Back to my list</button>
+    </section>
 
-// --- Firebase Initialization and Snapshots ---
+    <script>
+        // === GLOBAL VARIABLES ===
+        const listView = document.getElementById('listView');
+        const addView = document.getElementById('addView');
+        const animeListContainer = document.getElementById('animeListContainer');
+        const addAnimeForm = document.getElementById('addAnimeForm');
 
-function listenToPersonalList() {
-    if (!currentUserId) return () => {}; 
-    
-    const q = query(getPersonalListCollection());
-    
-    // onSnapshot sets up a realtime listener
-    return onSnapshot(q, (snapshot) => {
-        personalList = [];
-        snapshot.forEach((doc) => {
-            // Include the document ID in the object
-            personalList.push({ id: doc.id, ...doc.data() });
-        });
-        console.log("Personal list updated:", personalList.length, "items.");
-        renderList();
+        // === VIEW SWITCHING LOGIC ===
+        function showListView() {
+            addView.style.display = 'none';
+            listView.style.display = 'block';
+            displayAnimeList(); // Refresh the list every time we show it
+        }
+
+        function showAddView() {
+            listView.style.display = 'none';
+            addView.style.display = 'block';
+            addAnimeForm.reset(); // Clear form fields
+        }
+
+        // === DATA HANDLING LOGIC ===
+
+        /**
+         * Reads the anime list from localStorage.
+         * @returns {Array} An array of anime objects.
+         */
+        function getAnimeList() {
+            return JSON.parse(localStorage.getItem('myAnimeList')) || [];
+        }
+
+        /**
+         * Saves the anime list to localStorage.
+         * @param {Array} animeList The array of anime objects to save.
+         */
+        function saveAnimeList(animeList) {
+            localStorage.setItem('myAnimeList', JSON.stringify(animeList));
+        }
+
+        /**
+         * Adds a new anime to the list and saves it.
+         */
+        function addAnime(event) {
+            event.preventDefault(); // Prevent page reload
+            const title = document.getElementById('animeTitle').value;
+            const link = document.getElementById('animeLink').value;
+            
+            const animeList = getAnimeList();
+            animeList.push({ title, link });
+            saveAnimeList(animeList);
+            
+            showListView(); // Switch back to the list view
+        }
         
-        // Render links view only if it's the current view to ensure data is fresh
-        if (currentView === 'links') {
-            renderVideoLinks();
-        }
-        // Also re-render requests to update the 'listed' status icon
-        if (currentView === 'list') {
-            renderRequests();
-        }
-    }, (error) => {
-        console.error("Personal list realtime error:", error);
-    });
-}
-
-function listenToPublicRequests() {
-    const q = query(getPublicRequestsCollection());
-    
-    return onSnapshot(q, (snapshot) => {
-        publicRequests = [];
-        snapshot.forEach((doc) => {
-            // Include the document ID in the object
-            publicRequests.push({ id: doc.id, ...doc.data() });
-        });
-        console.log("Public requests updated:", publicRequests.length, "requests.");
-        renderRequests();
-    }, (error) => {
-        console.error("Public requests realtime error:", error);
-    });
-}
-
-let personalListUnsubscribe = () => {};
-let publicRequestsUnsubscribe = () => {};
-
-async function initializeFirebase() {
-    console.log("Initializing Firebase...");
-    if (!firebaseConfig) {
-        loadingIndicator.innerHTML = '<p class="text-red-400">Error: Firebase configuration not found. Cannot connect to database.</p>';
-        return;
-    }
-
-    try {
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-
-        // --- Authentication Logic ---
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                // User is signed in
-                currentUserId = user.uid;
-                isAuthReady = true;
-                
-                // Hide loading indicator
-                loadingIndicator.classList.add('hidden');
-                
-                // Enable inputs
-                updateInteractiveElements(true);
-                
-                // Start listeners now that we have the user ID
-                personalListUnsubscribe = listenToPersonalList();
-                publicRequestsUnsubscribe = listenToPublicRequests();
-                
-                console.log("Auth success. User ID:", currentUserId);
-            } else {
-                // User is signed out (initial state or explicit sign out)
-                currentUserId = null;
-                isAuthReady = false;
-                
-                // Disable inputs
-                updateInteractiveElements(false);
-                
-                // Stop previous listeners
-                personalListUnsubscribe();
-                publicRequestsUnsubscribe();
-
-                console.log("No user signed in. Attempting sign-in...");
-                
-                // Attempt to sign in using the provided token (preferred) or anonymously
-                if (initialAuthToken) {
-                    signInWithCustomToken(auth, initialAuthToken)
-                        .then(() => console.log("Signed in with custom token."))
-                        .catch(error => {
-                            console.error("Custom token sign-in failed. Falling back to anonymous. Error:", error);
-                            signInAnonymously(auth).catch(err => {
-                                console.error("Anonymous sign-in failed:", err);
-                                loadingIndicator.innerHTML = '<p class="text-red-400">Authentication failed. Check console for details.</p>';
-                            });
-                        });
-                } else {
-                    signInAnonymously(auth)
-                        .then(() => console.log("Signed in anonymously."))
-                        .catch(error => {
-                            console.error("Anonymous sign-in failed:", error);
-                            loadingIndicator.innerHTML = '<p class="text-red-400">Authentication failed. Check console for details.</p>';
-                        });
-                }
+        /**
+         * Deletes an anime from the list by its index.
+         */
+        function deleteAnime(index) {
+            if (confirm('Are you sure you want to delete this item?')) {
+                const animeList = getAnimeList();
+                animeList.splice(index, 1); // Remove the item at the specified index
+                saveAnimeList(animeList);
+                displayAnimeList(); // Refresh the list view
             }
-        });
+        }
 
-    } catch (error) {
-        console.error("Firebase Initialization Error:", error);
-        loadingIndicator.innerHTML = `<p class="text-red-400">Initialization failed. Check console. (${error.message})</p>`;
-    }
-}
+        /**
+         * Renders the anime list to the page.
+         */
+        function displayAnimeList() {
+            const animeList = getAnimeList();
+            animeListContainer.innerHTML = ''; // Clear current list
 
-// --- Event Listeners ---
-addItemBtn.addEventListener('click', addItem);
-clearAllBtn.addEventListener('click', clearAll);
-addRequestBtn.addEventListener('click', addRequest);
+            if (animeList.length === 0) {
+                animeListContainer.innerHTML = '<p style="text-align: center;">Your list is empty! Add some anime.</p>';
+                return;
+            }
 
-listViewBtn.addEventListener('click', () => window.switchView('list'));
-linksViewBtn.addEventListener('click', () => window.switchView('links'));
+            animeList.forEach((anime, index) => {
+                // Create the main container div
+                const animeDiv = document.createElement('div');
+                animeDiv.className = 'anime-item';
 
-// Initialize on page load
-initializeFirebase();
+                // Create the link element
+                const animeLink = document.createElement('a');
+                animeLink.textContent = anime.title;
+                animeLink.href = anime.link;
+                animeLink.target = '_blank'; // Open in a new tab
 
-// Expose necessary functions globally for in-HTML event handlers
-window.toggleWatched = toggleWatched;
-window.deleteItem = deleteItem;
-window.moveRequestToPersonal = moveRequestToPersonal;
-window.deleteRequest = deleteRequest;
-window.renderPlayerView = renderPlayerView;
-// closePlayerView and switchView are already defined as window functions
+                // Create the delete button
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.className = 'delete-btn';
+                deleteButton.onclick = () => deleteAnime(index); // Pass the index to the delete function
+
+                // Append elements to the container
+                animeDiv.appendChild(animeLink);
+                animeDiv.appendChild(deleteButton);
+                animeListContainer.appendChild(animeDiv);
+            });
+        }
+
+        // === INITIALIZATION ===
+        
+        // Add event listener to the form
+        addAnimeForm.addEventListener('submit', addAnime);
+
+        // Show the main list view when the page first loads
+        document.addEventListener('DOMContentLoaded', showListView);
+    </script>
+
+</body>
+</html>
