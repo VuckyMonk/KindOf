@@ -115,9 +115,24 @@
             border-radius: 6px; 
             border-left: 4px solid var(--primary-color); 
             display: flex;
+            align-items: center; /* Vertically align items */
+            gap: 15px; /* Space between image and text */
+        }
+        /* Thumbnail Image Styling */
+        .anime-item .thumbnail {
+            width: 80px; /* Fixed width for thumbnails */
+            height: 100px; /* Fixed height for thumbnails */
+            object-fit: cover; /* Crop image to fit */
+            border-radius: 4px;
+            flex-shrink: 0; /* Prevent image from shrinking */
+        }
+        .anime-item .content-wrapper {
+            flex-grow: 1; /* Allows content to take available space */
+            display: flex;
             justify-content: space-between;
             align-items: center;
         }
+
         /* Make links look clickable, but keep them in-theme */
         .anime-item a { 
             text-decoration: none; 
@@ -145,12 +160,15 @@
             margin-bottom: 10px;
         }
         #addLinkForm .input-group { 
-            display: flex; 
+            display: grid; /* Use grid for internal input layout */
+            grid-template-columns: 1fr 1fr; /* Two columns for title/link */
             gap: 10px;
         }
-        #addLinkForm .input-group > div { 
-            flex: 1; 
+        /* Make image URL input full width below title/link */
+        #addLinkForm .input-group.full-width {
+            grid-column: 1 / -1; /* Span across both columns */
         }
+
         input[type="text"], input[type="url"] { 
             padding: 12px; 
             border: 1px solid var(--border-dark); 
@@ -188,7 +206,7 @@
         /* Video Player Specific Styles */
         #videoPlayerFrame {
             width: 100%;
-            height: 600px; /* Large, standard video size */
+            height: 600px; 
             border: 4px solid var(--primary-color);
             border-radius: 8px;
             background-color: #000;
@@ -215,11 +233,19 @@
                     <form id="addLinkForm">
                         <div class="input-group">
                             <div>
+                                <label for="linkTitle">Anime Title:</label>
                                 <input type="text" id="linkTitle" placeholder="Enter item title (e.g., Chainsaw Man)" required>
                             </div>
                             <div>
+                                <label for="linkUrl">Watch Link (Optional):</label>
                                 <input type="url" id="linkUrl" placeholder="Paste watch link (Optional - YouTube/Other)">
                             </div>
+                        </div>
+                        <div class="input-group full-width" style="margin-top: 10px;">
+                             <div>
+                                <label for="imageUrl">Image URL (Optional):</label>
+                                <input type="url" id="imageUrl" placeholder="Paste image URL for thumbnail">
+                             </div>
                         </div>
                         <button type="submit" class="button button-primary">Add to List</button>
                     </form>
@@ -243,9 +269,11 @@
                     
                     <form id="requestAnimeForm" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-bottom: 20px; align-items: end;">
                         <div>
+                            <label for="requestedTitle">Item to request:</label>
                             <input type="text" id="requestedTitle" placeholder="Item to request (e.g., One Piece)" required>
                         </div>
                         <div>
+                            <label for="requesterName">Your Name (Optional):</label>
                             <input type="text" id="requesterName" placeholder="Your Name (Optional)">
                         </div>
                         <button type="submit" class="button button-suggest">Suggest Item</button>
@@ -290,7 +318,6 @@
             document.getElementById(viewId).style.display = 'block';
             
             if (viewId === 'dashboardView') {
-                // When returning to dashboard, ensure player is reset (stops video/audio)
                 document.getElementById('videoPlayerFrame').src = ''; 
                 document.getElementById('addLinkForm').reset(); 
                 document.getElementById('requestAnimeForm').reset(); 
@@ -299,22 +326,16 @@
             }
         }
         
-        // FUNCTION: Loads the video link into the iframe and switches view
         function loadVideoPlayer(title, url) {
             if (!url) {
                 alert(`Error: Cannot play "${title}". No link provided for this item.`);
                 return;
             }
             document.getElementById('playerTitle').textContent = `Watching: ${title}`;
-            
-            // NOTE: Many major video sites (like YouTube) block embedding in iframes 
-            // from unlisted domains. This feature is best for links you control or sites 
-            // that specifically allow embedding. For YouTube, you must use the 'embed' URL.
             document.getElementById('videoPlayerFrame').src = url;
-            
             showView('playerView');
         }
-        window.loadVideoPlayer = loadVideoPlayer; // Expose to HTML
+        window.loadVideoPlayer = loadVideoPlayer;
 
         // === DATA HANDLERS (Anime List - Personal Links) ===
         function getAnimeList() {
@@ -329,9 +350,11 @@
              event.preventDefault();
              const title = document.getElementById('linkTitle').value;
              const link = document.getElementById('linkUrl').value;
+             const imageUrl = document.getElementById('imageUrl').value; // Get the image URL
              
              const animeList = getAnimeList();
-             animeList.push({ title, link });
+             // Store the image URL along with title and link
+             animeList.push({ title, link, imageUrl }); 
              saveAnimeList(animeList);
              
              document.getElementById('addLinkForm').reset();
@@ -371,14 +394,20 @@
                 const animeDiv = document.createElement('div');
                 animeDiv.className = 'anime-item';
                 
+                // Determine image source - use provided URL or a placeholder
+                const imageSrc = anime.imageUrl && anime.imageUrl.startsWith('http') ? anime.imageUrl : 'https://via.placeholder.com/80x100?text=No+Image';
+
                 // Uses loadVideoPlayer for the link click
-                const linkTag = anime.link ? 
+                const linkContent = anime.link ? 
                     `<a onclick="loadVideoPlayer('${anime.title.replace(/'/g, "\\'")}', '${anime.link.replace(/'/g, "\\'")}')" title="Play Link">${anime.title}</a>` :
                     `<span>${anime.title} (No Link)</span>`;
 
                 animeDiv.innerHTML = `
-                    ${linkTag}
-                    <button class="button button-danger delete-btn" style="padding: 5px 10px; font-size: 0.8em;" onclick="deleteAnime(${index})">Delete</button>
+                    <img src="${imageSrc}" alt="${anime.title} Thumbnail" class="thumbnail">
+                    <div class="content-wrapper">
+                        ${linkContent}
+                        <button class="button button-danger delete-btn" style="padding: 5px 10px; font-size: 0.8em;" onclick="deleteAnime(${index})">Delete</button>
+                    </div>
                 `;
                 container.appendChild(animeDiv);
             });
@@ -469,7 +498,6 @@
             document.getElementById('requestAnimeForm').addEventListener('submit', handleRequestSubmit);
             document.getElementById('addLinkForm').addEventListener('submit', handleAddLink);
             
-            // Expose admin functions to the window for button clicks
             window.deleteAnime = deleteAnime;
             window.updateRequestStatus = updateRequestStatus;
             window.deleteRequest = deleteRequest;
