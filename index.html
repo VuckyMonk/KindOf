@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Realtime Watch List Dashboard (JSONbin.io Sync)</title>
+    <title>Realtime Watch List Dashboard (GitHub Sync)</title>
     <style>
         /* CSS Variables for Dark Dashboard Theme */
         :root {
@@ -101,8 +101,8 @@
             font-size: 0.9em;
             margin-bottom: 15px;
         }
-        .sync-instruction-header.jsonbin {
-            color: #12C1B4; /* JSONbin Teal */
+        .sync-instruction-header.github {
+            color: #58A6FF; /* GitHub Blue */
         }
 
 
@@ -241,15 +241,15 @@
 
     <section id="dashboardView" class="view container" style="display: block;">
         
-        <h1 class="main-header">Realtime Watch List (JSONbin.io Sync)</h1>
+        <h1 class="main-header">Realtime Watch List (GitHub Sync)</h1>
         
         <div class="dashboard-grid">
             <div class="column-left">
                 
                 <div class="card">
                     <h3 class="highlight">Add New Item (Shared)</h3>
-                    <p class="sync-instruction-header jsonbin">
-                        🚀 **Real-Time Sync Activated!** Data syncs via JSONbin.io.
+                    <p class="sync-instruction-header github">
+                        🚀 **Real-Time Sync Activated!** Data syncs via GitHub Gist.
                     </p>
                     <form id="addLinkForm">
                         <div class="input-group">
@@ -274,7 +274,7 @@
 
                 <div class="card">
                     <h3 class="highlight" id="listHeader">Family Watch List (0 Titles)</h3>
-                    <div id="syncStatusList">🔄 Connecting to JSONbin.io...</div>
+                    <div id="syncStatusList">🔄 Connecting to GitHub Gist...</div>
                     
                     <div id="animeListContainer">
                         </div>
@@ -287,7 +287,7 @@
                 
                 <div class="card">
                     <h3 class="public-highlight">Public Watch Requests (Shared)</h3>
-                    <div id="syncStatusRequests">🔄 Connecting to JSONbin.io...</div>
+                    <div id="syncStatusRequests">🔄 Connecting to GitHub Gist...</div>
                     
                     <form id="requestAnimeForm" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-bottom: 20px; align-items: end;">
                         <div>
@@ -330,123 +330,126 @@
     </section>
 
     <script>
-        // --- 🔑 CONFIGURATION: PASTE YOUR JSONbin.io DETAILS HERE 🔑 ---
+        // --- 🔑 CONFIGURATION: PASTE YOUR GITHUB DETAILS HERE 🔑 ---
         // -------------------------------------------------------------------
         // !!! IMPORTANT !!! Replace the three placeholder strings below with your keys
         // -------------------------------------------------------------------
-        const MASTER_KEY = '$2a$10$2z9zJ0EdPxykjNNosLeSsep0mn12MfLCCkEUaUWJkSC.4EkGyb2sK'; 
-        const BIN_ID_LIST = '68fe280fd0ea881f40bd4504';       
-        const BIN_ID_REQUESTS = '68fe27b1ae596e708f2e077c';    
+        const GITHUB_TOKEN = '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'; 
+        const GIST_ID_LIST = '43dba31592046508c114f289790443e9';       // <-- FIRST Gist ID (for the main list)
+        const GIST_ID_REQUESTS = '934c41ce11ffa4a90d3284275d0353e6';    // <-- SECOND Gist ID (for the requests)
+        
+        // These file names are constant and should match the files you created in your Gists
+        const FILENAME_LIST = 'animeList.json'; 
+        const FILENAME_REQUESTS = 'animeRequests.json';
         // -------------------------------------------------------------------
 
-        // --- CONSTANTS AND STATE ---
+        // --- GLOBAL STATE ---
         const ITEMS_PER_LOAD = 10;
         let visibleItemCount = 0;
+        // Global variables to hold the current data fetched from GitHub
+        let currentAnimeList = [];
+        let currentAnimeRequests = [];
         
-        const JSONBIN_URL_LIST = `https://api.jsonbin.io/v3/b/68fe280fd0ea881f40bd4504`;
-        const JSONBIN_URL_REQUESTS = `https://api.jsonbin.io/v3/b/68fe27b1ae596e708f2e077c`;
-
         const syncStatusListElement = document.getElementById('syncStatusList');
         const syncStatusRequestsElement = document.getElementById('syncStatusRequests');
 
         function checkConfig() {
-            if (MASTER_KEY.startsWith('YOUR_JSONBIN') || BIN_ID_LIST.startsWith('YOUR_WATCHLIST') || BIN_ID_REQUESTS.startsWith('YOUR_REQUESTS')) {
-                const errorMsg = '🛑 ERROR: Sync not configured. Please set MASTER_KEY, BIN_ID_LIST, and BIN_ID_REQUESTS in the script.';
+            // Check for the GitHub placeholders now
+            if (GITHUB_TOKEN.startsWith('YOUR_GITHUB') || GIST_ID_LIST.startsWith('YOUR_WATCHLIST') || GIST_ID_REQUESTS.startsWith('YOUR_REQUESTS')) {
+                const errorMsg = '🛑 ERROR: Sync not configured. Please set GITHUB_TOKEN, GIST_ID_LIST, and GIST_ID_REQUESTS in the script.';
                 syncStatusListElement.textContent = errorMsg;
                 syncStatusRequestsElement.textContent = errorMsg;
                 return false;
             }
             return true;
         }
-
-        // === JSONBIN.IO SYNC FUNCTIONS (GENERIC) ===
         
-        async function fetchJsonbinData(url, statusElement) {
-            if (!checkConfig()) return [];
+        // === GITHUB GIST SYNC FUNCTIONS (GENERIC) ===
+        
+        // This function handles both fetching and updating data using the GitHub Gist API
+        async function handleGistData(gistId, fileName, data = null, statusElement) {
+            if (!checkConfig()) return data === null ? [] : null;
+
+            const GIST_URL = `https://api.github.com/gists/${gistId}`;
+            const isUpdate = data !== null;
             
-            statusElement.textContent = '🔄 Fetching data from JSONbin.io...';
-            
+            statusElement.textContent = isUpdate ? '📤 Saving data to GitHub Gist...' : '🔄 Fetching data from GitHub Gist...';
+
             try {
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'X-Master-Key': MASTER_KEY
+                const headers = {
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Authorization': `token ${GITHUB_TOKEN}`,
+                    'Content-Type': 'application/json'
+                };
+
+                if (isUpdate) {
+                    // --- UPDATE LOGIC (PATCH) ---
+                    const response = await fetch(GIST_URL, {
+                        method: 'PATCH', 
+                        headers: headers,
+                        body: JSON.stringify({
+                            files: {
+                                [fileName]: {
+                                    content: JSON.stringify(data)
+                                }
+                            }
+                        })
+                    });
+                    
+                    if (!response.ok) throw new Error(`GitHub Update Failed: ${response.status} ${response.statusText}`);
+                    
+                    statusElement.textContent = `✅ Sync successful! Data saved to Gist.`;
+                    return true;
+                
+                } else {
+                    // --- FETCH LOGIC (GET) ---
+                    const response = await fetch(GIST_URL, {
+                        method: 'GET',
+                        headers: headers
+                    });
+
+                    if (!response.ok) {
+                         // Fallback for 404/422 (Gist/File empty or not found)
+                         if (response.status === 404 || response.status === 422) {
+                            statusElement.textContent = `⚠️ Gist/File not found or empty. Returning empty list.`;
+                            return [];
+                         }
+                         throw new Error(`GitHub Fetch Failed: ${response.status} ${response.statusText}`);
                     }
-                });
-
-                if (response.status === 404) {
-                    statusElement.textContent = '⚠️ Bin not found. Initializing with empty list.';
-                    return [];
+                    
+                    const gistData = await response.json();
+                    // Get content from the specific file name within the Gist
+                    const fileContent = gistData.files[fileName] ? gistData.files[fileName].content : '[]';
+                    const parsedData = JSON.parse(fileContent || '[]');
+                    
+                    statusElement.textContent = `✅ Sync successful! Loaded ${parsedData.length} items/requests.`;
+                    return parsedData;
                 }
-                if (!response.ok) throw new Error(`Fetch failed with status: ${response.status}`);
-                
-                const data = await response.json();
-                
-                // V3 API wraps content in a 'record' field
-                const list = data.record || []; 
-                
-                statusElement.textContent = `✅ Sync successful! Loaded ${list.length} items/requests.`;
-                return list;
 
             } catch (error) {
-                console.error('JSONbin Sync Failed:', error);
-                statusElement.textContent = `❌ Sync Failed. Check console and MASTER_KEY/Bin IDs.`;
-                return []; 
+                console.error('GitHub Sync Failed:', error);
+                statusElement.textContent = `❌ Sync Failed. Check console for details.`;
+                return data === null ? [] : false; // Return empty array on read fail, false on write fail
             }
         }
-
-        async function updateJsonbinData(url, data, statusElement) {
-            if (!checkConfig()) return false;
-            
-            statusElement.textContent = '📤 Saving data to JSONbin.io...';
-
-            try {
-                const response = await fetch(url, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Master-Key': MASTER_KEY,
-                        'X-Bin-Versioning': 'false'
-                    },
-                    body: JSON.stringify(data)
-                });
-
-                if (!response.ok) throw new Error(`Update failed with status: ${response.status}`);
-                
-                statusElement.textContent = `✅ Sync successful! Data saved to JSONbin.io.`;
-                return true;
-
-            } catch (error) {
-                console.error('JSONbin Update Failed:', error);
-                statusElement.textContent = `❌ Update Failed. Check console and MASTER_KEY/Bin IDs.`;
-                return false;
-            }
-        }
-
-        // === JSONBIN SPECIFIC WRAPPERS ===
+        
+        // === GIST SPECIFIC WRAPPERS ===
 
         async function fetchSharedList() {
-            return fetchJsonbinData(JSONBIN_URL_LIST, syncStatusListElement);
+            return await handleGistData(GIST_ID_LIST, FILENAME_LIST, null, syncStatusListElement);
         }
 
         async function updateSharedList(animeList) {
-            return updateJsonbinData(JSONBIN_URL_LIST, animeList, syncStatusListElement);
+            return await handleGistData(GIST_ID_LIST, FILENAME_LIST, animeList, syncStatusListElement);
         }
 
         async function fetchSharedRequests() {
-            return fetchJsonbinData(JSONBIN_URL_REQUESTS, syncStatusRequestsElement);
+            return await handleGistData(GIST_ID_REQUESTS, FILENAME_REQUESTS, null, syncStatusRequestsElement);
         }
 
         async function updateSharedRequests(requests) {
-            return updateJsonbinData(JSONBIN_URL_REQUESTS, requests, syncStatusRequestsElement);
+            return await handleGistData(GIST_ID_REQUESTS, FILENAME_REQUESTS, requests, syncStatusRequestsElement);
         }
-        
-        // --- LOCAL CACHING AND FALLBACK FUNCTIONS ---
-        // Not used for primary sync but good for redundancy, skipped for brevity in this final template
-        // as the main focus is the network sync.
-        
-        // --- CORE LOGIC FUNCTIONS ---
-        // (These functions interact with the fetch/update wrappers above)
 
         // === EVENT HANDLERS (WATCH LIST) ===
         
@@ -456,31 +459,30 @@
              const link = document.getElementById('linkUrl').value;
              const imageUrl = document.getElementById('imageUrl').value;
              
-             let animeList = await fetchSharedList();
-             animeList.unshift({ title, link, imageUrl }); 
+             // Use the current global state array
+             currentAnimeList.unshift({ title, link, imageUrl }); 
              
              document.getElementById('addLinkForm').reset();
              
              // Update display immediately for responsiveness
              visibleItemCount = 0; 
              document.getElementById('animeListContainer').innerHTML = '';
-             displayAnimeList(animeList); 
+             displayAnimeList(); 
 
-             await updateSharedList(animeList); // Calls sync
+             await updateSharedList(currentAnimeList); // Calls sync
         }
 
         async function deleteAnime(index) {
             if (confirm('Are you sure you want to delete this item? This action will be synced immediately.')) {
-                let animeList = await fetchSharedList();
                 
-                animeList.splice(index, 1);
+                currentAnimeList.splice(index, 1);
                 
                 // Update display immediately
                 visibleItemCount = 0; 
                 document.getElementById('animeListContainer').innerHTML = '';
-                displayAnimeList(animeList); 
+                displayAnimeList(); 
 
-                await updateSharedList(animeList); // Calls sync
+                await updateSharedList(currentAnimeList); // Calls sync
             }
         }
         window.deleteAnime = deleteAnime;
@@ -492,33 +494,30 @@
             const name = document.getElementById('requesterName').value || 'Anonymous'; 
             const title = document.getElementById('requestedTitle').value;
 
-            let requests = await fetchSharedRequests();
-            requests.unshift({ name, title, status: 'New' });
+            currentAnimeRequests.unshift({ name, title, status: 'New' });
 
             document.getElementById('requestAnimeForm').reset();
-            displayRequests(requests);
+            displayRequests();
 
-            await updateSharedRequests(requests); // Calls sync
+            await updateSharedRequests(currentAnimeRequests); // Calls sync
         }
 
         async function updateRequestStatus(index, newStatus) {
-            let requests = await fetchSharedRequests();
-            if (index < 0 || index >= requests.length) return; 
+            if (index < 0 || index >= currentAnimeRequests.length) return; 
 
-            requests[index].status = newStatus;
-            displayRequests(requests); 
+            currentAnimeRequests[index].status = newStatus;
+            displayRequests(); 
             
-            await updateSharedRequests(requests); // Calls sync
+            await updateSharedRequests(currentAnimeRequests); // Calls sync
         }
         window.updateRequestStatus = updateRequestStatus;
         
         async function deleteRequest(index) {
             if (confirm('Are you sure you want to permanently delete this request? This will be synced to all devices.')) {
-                let requests = await fetchSharedRequests();
-                requests.splice(index, 1);
-                displayRequests(requests);
+                currentAnimeRequests.splice(index, 1);
+                displayRequests();
                 
-                await updateSharedRequests(requests); // Calls sync
+                await updateSharedRequests(currentAnimeRequests); // Calls sync
             }
         }
         window.deleteRequest = deleteRequest;
@@ -541,7 +540,8 @@
                 
                 visibleItemCount = 0; 
                 document.getElementById('animeListContainer').innerHTML = '';
-                initializeDashboard(); // Re-initialize to fetch latest data
+                // Re-initialize to fetch latest data from the cloud
+                initializeDashboard(); 
             }
         }
         
@@ -556,23 +556,14 @@
         }
         window.loadVideoPlayer = loadVideoPlayer;
 
-        // Note: loadMoreAnime will trigger fetch on demand if list is null
         function loadMoreAnime() {
-            displayAnimeList(); 
+            displayAnimeList(true);
         }
         window.loadMoreAnime = loadMoreAnime;
 
-        function displayAnimeList(animeList = null, append = false) {
+        function displayAnimeList(append = false) {
             const container = document.getElementById('animeListContainer');
-            // If called without a list, use the list fetched during init, or fetch it again
-            if (animeList === null) {
-                // Warning: If called without list, this assumes list is up to date, 
-                // for simplicity, we call init again on the dashboard load
-            }
-            
-            let listToRender = animeList || window.currentAnimeList || [];
-
-            const totalItems = listToRender.length;
+            const totalItems = currentAnimeList.length;
             const loadMoreBtn = document.getElementById('loadMoreBtn');
             
             if (!append) {
@@ -586,7 +577,7 @@
                 container.innerHTML = '';
             }
             
-            const itemsToDisplay = listToRender.slice(nextBatchStart, nextBatchEnd);
+            const itemsToDisplay = currentAnimeList.slice(nextBatchStart, nextBatchEnd);
             
             document.getElementById('listHeader').textContent = `Family Watch List (${totalItems} Titles)`;
 
@@ -602,7 +593,6 @@
                 const animeDiv = document.createElement('div');
                 animeDiv.className = 'anime-item';
                 
-                // If no image URL is provided, use a placeholder
                 const imageSrc = anime.imageUrl && anime.imageUrl.startsWith('http') ? anime.imageUrl : 'https://via.placeholder.com/80x100?text=No+Image';
 
                 const linkContent = anime.link ? 
@@ -629,13 +619,11 @@
             }
         }
 
-        function displayRequests(requests = null) {
+        function displayRequests() {
             const tableBody = document.getElementById('requestTableBody');
-            
-            let requestsToRender = requests || window.currentAnimeRequests || [];
             tableBody.innerHTML = '';
 
-            if (requestsToRender.length === 0) {
+            if (currentAnimeRequests.length === 0) {
                 const tr = document.createElement('tr');
                 const td = document.createElement('td');
                 td.colSpan = 4;
@@ -646,7 +634,7 @@
                 return;
             }
 
-            requestsToRender.forEach((req, index) => {
+            currentAnimeRequests.forEach((req, index) => {
                 const tr = document.createElement('tr');
                 
                 const statusTag = `<span class="status-tag ${req.status.replace(/\s/g, '-')}" >${req.status}</span>`;
@@ -663,7 +651,7 @@
                 tr.innerHTML = `
                     <td>${req.title}</td>
                     <td>${req.name}</td>
-                    <td><td>${statusTag}</td></td>
+                    <td>${statusTag}</td>
                     <td>${actionButtons}</td>
                 `;
                 tableBody.appendChild(tr);
@@ -672,17 +660,17 @@
 
         // === INITIALIZATION ===
         async function initializeDashboard() {
-            // Fetch both lists asynchronously and store them globally for rendering
+            // Fetch both lists asynchronously and store them globally
             const [list, requests] = await Promise.all([
                 fetchSharedList(),
                 fetchSharedRequests()
             ]);
             
-            window.currentAnimeList = list;
-            window.currentAnimeRequests = requests;
+            currentAnimeList = list;
+            currentAnimeRequests = requests;
 
-            displayAnimeList(list);
-            displayRequests(requests);
+            displayAnimeList();
+            displayRequests();
         }
 
         document.addEventListener('DOMContentLoaded', () => {
